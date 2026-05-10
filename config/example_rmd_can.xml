@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Config>
+    <CAN>
+        <Devices>
+            <Device type="RMD-X12-P20-320">
+                <MinP>-12.5</MinP>
+                <MaxP>12.5</MaxP>
+                <MinV>-45.0</MinV>
+                <MaxV>45.0</MaxV>
+                <MinKp>0.0</MinKp>
+                <MaxKp>500.0</MaxKp>
+                <MinKd>0.0</MinKd>
+                <MaxKd>5.0</MaxKd>
+                <MinT>-24.0</MinT>
+                <MaxT>24.0</MaxT>
+            </Device>
+        </Devices>
+        <Categories>
+            <Category name="driver">
+                <Type master_ids="14" masters="0">RMD-X12-P20-320</Type>
+            </Category>
+        </Categories>
+        <Masters period="1000000" rx_cpu="-1" tx_cpu="-1" tx_cpu_="-1">
+            <Master order="0" device="can0" canhal="false" baudrate="1000000" canfd="false" dbaudrate="5000000" division="1"/>
+        </Masters>
+        <Slaves>
+            <Slave master="0" master_ids="14" slave_id="14" alias="1" type="RMD-X12-P20-320">1</Slave>
+        </Slaves>
+    </CAN>
+    <Motors>
+        <Motor limb="0" motor="0" alias="1">
+            <Polarity>1</Polarity>
+            <CountBias>0</CountBias>
+            <EncoderResolution>131072</EncoderResolution>
+            <GearRatioTor>20</GearRatioTor>
+            <GearRatioPosVel>20</GearRatioPosVel>
+            <RatedCurrent>42.42</RatedCurrent>
+            <TorqueConstant>2.81</TorqueConstant>
+            <RatedTorque>85</RatedTorque>
+            <MaximumTorque>320</MaximumTorque>
+            <MinimumPosition>-1.0</MinimumPosition>
+            <MaximumPosition>1.0</MaximumPosition>
+        </Motor>
+    </Motors>
+</Config>

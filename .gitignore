@@ -1,0 +1,50 @@
+# Build outputs
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Project build directories
+rmd_can_sdk/build/
+heimaSDK/build/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime output
+logs/
+*.log
+core
+core.*
+Screenshot*.png
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Local Codex runtime mount
+.codex
+
+# Local feature worktrees
+.worktrees/
+
+# Broken worktree metadata backups
+.git.broken-worktree-*
