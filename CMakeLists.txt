@@ -12,6 +12,7 @@ option(RMD_CAN_SDK_ENABLE_ECAT "Build IgH EtherCAT backend" OFF)
 
 set(RMD_CAN_SDK_SOURCES
     src/common.cpp
+    src/rmd_bench_workflow.cpp
     src/heima_ecat_types.cpp
     src/rmd_can_backend.cpp
     src/rmd_can_config.cpp
@@ -77,6 +78,38 @@ add_executable(rmd_ecat_snapshot_probe
 )
 
 target_link_libraries(rmd_ecat_snapshot_probe PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_hold_position
+    examples/rmd_ecat_hold_position.cpp
+)
+
+target_link_libraries(rmd_ecat_hold_position PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_position_targets
+    examples/rmd_ecat_position_targets.cpp
+)
+
+target_link_libraries(rmd_ecat_position_targets PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_step_response_test
+    examples/rmd_ecat_step_response_test.cpp
+)
+
+target_link_libraries(rmd_ecat_step_response_test PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_pvt_torque_fit
+    examples/rmd_ecat_pvt_torque_fit.cpp
+)
+
+target_link_libraries(rmd_ecat_pvt_torque_fit PRIVATE
     rmd_can_sdk
 )
 
@@ -159,6 +192,42 @@ add_test(
 set_tests_properties(yesense_imu_test_rejects_missing_args PROPERTIES
     WILL_FAIL TRUE
     FAIL_REGULAR_EXPRESSION "usage:"
+)
+
+add_test(
+    NAME rmd_ecat_position_targets_rejects_bad_assignment
+    COMMAND rmd_ecat_position_targets /tmp/rmd_missing_config.xml 1000 500 10 5 100 bad
+)
+set_tests_properties(rmd_ecat_position_targets_rejects_bad_assignment PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "target assignment must be motor=position"
+)
+
+add_test(
+    NAME rmd_ecat_position_targets_rejects_zero_motor_index
+    COMMAND rmd_ecat_position_targets /tmp/rmd_missing_config.xml 1000 500 10 5 100 0=0.1
+)
+set_tests_properties(rmd_ecat_position_targets_rejects_zero_motor_index PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "motor index must be positive"
+)
+
+add_test(
+    NAME rmd_ecat_step_response_rejects_invalid_period
+    COMMAND rmd_ecat_step_response_test /tmp/rmd_missing_config.xml 3 0.03 1000 2000 500 10 0 /tmp/rmd_step.csv 0
+)
+set_tests_properties(rmd_ecat_step_response_rejects_invalid_period PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "period_us must be positive"
+)
+
+add_test(
+    NAME rmd_ecat_step_response_rejects_invalid_mode
+    COMMAND rmd_ecat_step_response_test /tmp/rmd_missing_config.xml 3 0.03 1000 2000 500 10 1000 /tmp/rmd_step.csv 0 999 200 0.9 0
+)
+set_tests_properties(rmd_ecat_step_response_rejects_invalid_mode PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "mode must fit int8"
 )
 
 add_test(

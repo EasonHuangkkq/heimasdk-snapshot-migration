@@ -1,5 +1,6 @@
 #include "rmd_can_sdk/heima_driver_sdk.h"
 #include "rmd_can_sdk/heima_ecat_types.h"
+#include "rmd_can_sdk/rmd_bench_workflow.h"
 #include "rmd_can_sdk/rmd_can_backend.h"
 #include "rmd_can_sdk/rmd_can_config.h"
 #include "rmd_can_sdk/rmd_ethercat_bindings.h"
@@ -748,6 +749,21 @@ void testSafetySupervisorClampsTargetsAndMarksStaleActuals() {
     require(actual.errorCode == RmdCanSdk::ErrorCodeFeedbackTimeout, "stale actual errorCode is timeout");
 }
 
+void testBenchWorkflowHelpersUseSharedMotorSemantics() {
+    RmdCanSdk::Config config = RmdCanSdk::loadConfig(writeTempConfig());
+
+    RmdCanSdk::MotorParameters const* first = RmdCanSdk::findParamsForAlias(config, 1);
+    require(first != nullptr, "bench workflow finds motor parameters by alias");
+    require(std::fabs(first->maximumPosition - 1.0f) < 0.0001f,
+            "bench workflow returns the matching motor parameter block");
+    require(RmdCanSdk::findParamsForAlias(config, 99) == nullptr,
+            "bench workflow reports missing motor parameters");
+
+    require(!RmdCanSdk::operationEnabled(0x0031), "bench workflow rejects switched-on-disabled status");
+    require(RmdCanSdk::operationEnabled(0x0037), "bench workflow accepts operation-enabled status");
+    require(RmdCanSdk::operationEnabled(0x0237), "bench workflow masks vendor/status high bits");
+}
+
 class FakeBackend final : public RmdCanSdk::MotorBackend {
 public:
     int start() override {
@@ -1291,6 +1307,7 @@ int main() {
     testEthercatPdoCodecPacksHeimaRxData();
     testHeimaEcatPdoLayoutMatchesOriginal();
     testHeimaHalfFloatConversionMatchesOriginal();
+    testBenchWorkflowHelpersUseSharedMotorSemantics();
     testDriverSdkReportsUninitializedBeforeInit();
     testDriverSdkRejectsSetModeAfterInit();
     testDriverSdkFailsWhenConfiguredImuCannotStart();
