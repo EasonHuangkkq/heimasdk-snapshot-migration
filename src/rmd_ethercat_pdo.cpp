@@ -150,6 +150,29 @@ EthercatPackedTarget packEthercatTargetForRealtime(MotorTarget const& target,
     return packed;
 }
 
+int applyEthercatCommandWatchdog(EthercatPackedTargetFrame& frame,
+                                 RealtimeClock::time_point now,
+                                 RealtimeClock::duration timeout) {
+    if (timeout <= RealtimeClock::duration::zero() || frame.timestamp.time_since_epoch() == RealtimeClock::duration::zero()) {
+        return 0;
+    }
+    if (now - frame.timestamp < timeout) {
+        return 0;
+    }
+
+    int cleared = 0;
+    for (std::size_t i = 0; i < MaxRealtimeMotors; ++i) {
+        if (!frame.valid.test(i)) {
+            continue;
+        }
+        if (frame.targets[i].enabled != 0) {
+            frame.targets[i].enabled = 0;
+            ++cleared;
+        }
+    }
+    return cleared;
+}
+
 MotorActual parseEthercatStandardTxPdo(HeimaStandardTxData const& tx, MotorParameters const& params) {
     MotorActual actual;
     actual.encoderCount = tx.ActualPosition;

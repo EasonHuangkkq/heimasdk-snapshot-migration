@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build-ci
+
+      - name: Build
+        run: cmake --build build-ci --parallel
+
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure

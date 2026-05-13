@@ -17,6 +17,8 @@ namespace {
 volatile std::sig_atomic_t gStopRequested = 0;
 using RmdCanSdk::disableMotors;
 using RmdCanSdk::feedbackReady;
+using RmdCanSdk::operationFeedbackReady;
+using RmdCanSdk::recordConsecutiveReady;
 
 void requestStop(int) {
     gStopRequested = 1;
@@ -28,7 +30,7 @@ int parsePositive(char const* text, int fallback) {
     }
     char* end = nullptr;
     long const value = std::strtol(text, &end, 10);
-    if (end == text || value <= 0 || value > 100000000L) {
+    if (end == text || *end != '\0' || value <= 0 || value > 100000000L) {
         return -1;
     }
     return static_cast<int>(value);
@@ -71,7 +73,7 @@ int main(int argc, char** argv) {
     int const settleSamples = argc > 4 ? parsePositive(argv[4], 450) : 450;
     int const periodMs = argc > 5 ? parsePositive(argv[5], 5) : 5;
     std::string const targetMode = argc > 6 ? argv[6] : "current";
-    int const rampMs = argc > 7 ? parsePositive(argv[7], 0) : 0;
+    int const rampMs = argc > 7 ? RmdCanSdk::parseNonNegativeInt(argv[7], 0) : 0;
     if (holdMs <= 0 || maxCurrent <= 0 || maxCurrent > 65535 || settleSamples <= 0 || periodMs <= 0) {
         std::cerr << "invalid numeric argument\n";
         return 2;
@@ -105,13 +107,13 @@ int main(int argc, char** argv) {
         for (int sample = 0; sample < settleSamples && !gStopRequested; ++sample) {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             int const actualStatus = sdk.getMotorActual(actuals);
-            if (feedbackReady(sdk, actuals, actualStatus)) {
-                ++consecutiveReady;
-            } else {
-                consecutiveReady = 0;
-            }
-            if ((sample % 25) == 0 || sample + 1 == settleSamples) {
+            bool const readyWindowFull =
+                recordConsecutiveReady(feedbackReady(sdk, actuals, actualStatus), consecutiveReady, 10);
+            if ((sample % 25) == 0 || readyWindowFull || sample + 1 == settleSamples) {
                 printActuals("settle", sample, sdk, actuals);
+            }
+            if (readyWindowFull) {
+                break;
             }
         }
         if (gStopRequested) {
@@ -141,6 +143,40 @@ int main(int argc, char** argv) {
                       << " ramp_ms=" << rampMs << "\n";
         }
 
+        int consecutiveOperationEnabled = 0;
+        for (int sample = 0; sample < settleSamples && !gStopRequested; ++sample) {
+            if (sdk.setMotorTarget(targets) != 0) {
+                std::cerr << "setMotorTarget failed while enabling motors\n";
+                disableMotors(sdk, targets);
+                return 1;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(periodMs));
+            int const actualStatus = sdk.getMotorActual(actuals);
+            if (operationFeedbackReady(sdk, actuals, actualStatus)) {
+                ++consecutiveOperationEnabled;
+            } else {
+                consecutiveOperationEnabled = 0;
+            }
+            if ((sample % std::max(1, 100 / periodMs)) == 0 || consecutiveOperationEnabled >= 10 ||
+                sample + 1 == settleSamples) {
+                printActuals("enable", sample, sdk, actuals);
+            }
+            if (consecutiveOperationEnabled >= 10) {
+                break;
+            }
+        }
+        if (gStopRequested) {
+            std::cerr << "stop requested while enabling motors\n";
+            disableMotors(sdk, targets);
+            return 130;
+        }
+        if (consecutiveOperationEnabled < 10) {
+            std::cerr << "motors did not reach operation enabled; consecutive enabled samples="
+                      << consecutiveOperationEnabled << "\n";
+            disableMotors(sdk, targets);
+            return 1;
+        }
+
         int const iterations = std::max(1, holdMs / periodMs);
         for (int i = 0; i < iterations && !gStopRequested; ++i) {
             float const progress = rampMs <= 0 ? 1.0f : std::min(1.0f, static_cast<float>(i * periodMs) / rampMs);
@@ -156,8 +192,8 @@ int main(int argc, char** argv) {
             }
             if ((i % std::max(1, 100 / periodMs)) == 0 || i + 1 == iterations) {
                 int const actualStatus = sdk.getMotorActual(actuals);
-                if (!feedbackReady(sdk, actuals, actualStatus)) {
-                    std::cerr << "feedback lost while holding position\n";
+                if (!operationFeedbackReady(sdk, actuals, actualStatus)) {
+                    std::cerr << "operation-enabled feedback lost while holding position\n";
                     printActuals("hold", i, sdk, actuals);
                     disableMotors(sdk, targets);
                     return 1;

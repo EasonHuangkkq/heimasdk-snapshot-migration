@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,22 @@ struct motorActualStruct {
     unsigned short voltage = 0;
     unsigned short statusWord = 65535;
     unsigned short errorCode = 0;
+};
+
+struct backendStatusStruct {
+    bool running = false;
+    bool degraded = false;
+    int errorCode = 0;
+    std::uint64_t cycleCount = 0;
+    std::uint64_t deadlineMissCount = 0;
+    std::uint64_t lastCycleNs = 0;
+    std::uint64_t maxCycleNs = 0;
+    std::uint64_t lateWakeupCount = 0;
+    std::uint64_t lastWakeupLatencyNs = 0;
+    std::uint64_t maxWakeupLatencyNs = 0;
+    std::uint64_t staleFrameCount = 0;
+    std::uint64_t rxTimeoutCount = 0;
+    std::uint64_t wcIncompleteCount = 0;
 };
 
 class motorSDOClass {
@@ -89,6 +106,7 @@ public:
     int getDigitActual(std::vector<digitActualStruct>& data);
     int setMotorTarget(std::vector<motorTargetStruct> const& data);
     int getMotorActual(std::vector<motorActualStruct>& data);
+    int getBackendStatus(std::vector<backendStatusStruct>& data);
     int getEncoderCount(std::vector<int>& data);
     int sendMotorSDORequest(motorSDOClass const& data);
     int recvMotorSDOResponse(motorSDOClass& data);
@@ -109,4 +127,3 @@ private:
 };
 
 } // namespace DriverSDK
-

@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>膝盖曲柄连杆解析解推导</title>
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: #f6f4ee;
+    color: #171814;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    line-height: 1.72;
+  }
+  .page {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    min-height: 100vh;
+  }
+  main {
+    padding: 48px clamp(22px, 5vw, 72px) 80px;
+  }
+  aside {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow: auto;
+    border-left: 1px solid #d8d2c2;
+    background: #ebe6da;
+    padding: 28px 22px;
+  }
+  h1, h2, h3 { line-height: 1.25; letter-spacing: 0; }
+  h1 {
+    margin: 0 0 12px;
+    font-size: clamp(30px, 4vw, 48px);
+  }
+  h2 {
+    margin: 42px 0 14px;
+    padding-top: 22px;
+    border-top: 1px solid #d8d2c2;
+    font-size: 24px;
+  }
+  h3 {
+    margin: 26px 0 10px;
+    font-size: 17px;
+  }
+  p { margin: 0 0 14px; }
+  .subtitle {
+    max-width: 900px;
+    color: #5f5a50;
+    font-size: 16px;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 22px 0 34px;
+  }
+  .pill {
+    border: 1px solid #cfc7b5;
+    background: #fffdf8;
+    padding: 5px 10px;
+    font-size: 13px;
+    color: #3f3a32;
+  }
+  .abstract {
+    border-left: 5px solid #c7842d;
+    background: #fffdf8;
+    padding: 18px 20px;
+    margin: 24px 0 34px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin: 18px 0;
+  }
+  .box {
+    border: 1px solid #d8d2c2;
+    background: #fffdf8;
+    padding: 16px;
+  }
+  .box h3 { margin-top: 0; }
+  .math {
+    margin: 14px 0;
+    padding: 14px 16px;
+    background: #171814;
+    color: #f6f4ee;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .math .note { color: #b7ad9a; }
+  .step {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 13px;
+    margin: 18px 0;
+  }
+  .num {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #275c65;
+    color: white;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+  }
+  .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: #fffdf8;
+    border: 1px solid #d8d2c2;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+  .warn {
+    border-left: 5px solid #b94c3d;
+    background: #fff8f4;
+    padding: 14px 16px;
+    margin: 18px 0;
+  }
+  .ok {
+    border-left: 5px solid #3a7b54;
+    background: #f4fbf4;
+    padding: 14px 16px;
+    margin: 18px 0;
+  }
+  .diagram-wrap {
+    border: 1px solid #d8d2c2;
+    background: #fffdf8;
+    padding: 16px;
+    margin: 20px 0;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    background: #fffdf8;
+  }
+  th, td {
+    border: 1px solid #d8d2c2;
+    padding: 9px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #ebe6da; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .controls {
+    display: grid;
+    gap: 13px;
+    margin: 12px 0 18px;
+  }
+  label {
+    display: grid;
+    gap: 5px;
+    font-size: 13px;
+    color: #423d35;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #c7842d;
+  }
+  .readout {
+    display: grid;
+    gap: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .readout div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid #d8d2c2;
+    padding-bottom: 6px;
+  }
+  .nav {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 22px;
+    font-size: 13px;
+  }
+  .nav a {
+    color: #275c65;
+    text-decoration: none;
+  }
+  .nav a:hover { text-decoration: underline; }
+  .small { color: #6f685c; font-size: 13px; }
+  @media (max-width: 980px) {
+    .page { grid-template-columns: 1fr; }
+    aside {
+      position: static;
+      height: auto;
+      border-left: 0;
+      border-top: 1px solid #d8d2c2;
+    }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+<main>
+  <h1>膝盖曲柄连杆解析解推导</h1>
+  <p class="subtitle">本页只解释计算过程。目标是证明：膝盖这套一自由度曲柄连杆机构不需要牛顿迭代，可以用二维几何的两个圆交点直接求出电机相对角。</p>
+  <div class="meta">
+    <span class="pill">机械零位: 小腿直立</span>
+    <span class="pill">theta_zero = 8.4 deg</span>
+    <span class="pill">beta_zero = 61.2 deg</span>
+    <span class="pill">r = 50 mm, a = 50 mm, L = 215 mm</span>
+  </div>
+
+  <section class="abstract">
+    <h2 id="abstract">摘要</h2>
+    <p>机构中有四个关键点：膝盖轴中心 <span class="mono">O</span>、电机轴中心 <span class="mono">M</span>、曲轴端球心 <span class="mono">E</span>、膝盖输出小摇臂端球心 <span class="mono">K</span>。已知膝盖相对角 <span class="mono">q_rel</span> 后，可以直接算出 <span class="mono">K</span>。电机端点 <span class="mono">E</span> 必须同时落在两个圆上：以 <span class="mono">M</span> 为圆心半径 <span class="mono">r</span> 的曲轴圆、以 <span class="mono">K</span> 为圆心半径 <span class="mono">L</span> 的连杆圆。因此，反求电机角就是两个圆求交点。</p>
+  </section>
+
+  <h2 id="coordinates">1. 坐标系和已知量</h2>
+  <p>只看膝盖侧视平面，使用二维坐标 <span class="mono">[x, z]</span>。膝盖转轴中心作为坐标原点。</p>
+  <div class="math">
+O = [0, 0]<br>
+M = [M_x, M_z] = [0, 250]<br>
+x: 水平方向<br>
+z: 竖直方向
+  </div>
+  <div class="grid">
+    <div class="box">
+      <h3>长度参数</h3>
+      <div class="math">
+r = 50   <span class="note">// 电机曲轴半径</span><br>
+a = 50   <span class="note">// 膝盖输出小摇臂半径</span><br>
+L = 215  <span class="note">// 长连杆长度</span>
+      </div>
+    </div>
+    <div class="box">
+      <h3>零位参数</h3>
+      <div class="math">
+q_rel = 0 时，小腿直立<br>
+motor_rel = 0 时，电机在机械零位<br>
+theta_zero = 8.4 deg<br>
+beta_zero = 61.2 deg
+      </div>
+    </div>
+  </div>
+
+  <div class="diagram-wrap">
+    <svg viewBox="-80 -40 260 350" aria-label="二维曲柄连杆示意图">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5f5a50"></path>
+        </marker>
+      </defs>
+      <rect x="-80" y="-40" width="260" height="350" fill="#fffdf8"></rect>
+      <line x1="-60" y1="260" x2="160" y2="260" stroke="#c7bfad" stroke-width="1"></line>
+      <line x1="0" y1="280" x2="0" y2="-20" stroke="#c7bfad" stroke-width="1"></line>
+      <line x1="0" y1="260" x2="55" y2="247" stroke="#d29a3d" stroke-width="5" stroke-linecap="round"></line>
+      <line x1="55" y1="247" x2="27" y2="70" stroke="#3998a7" stroke-width="5" stroke-linecap="round"></line>
+      <line x1="0" y1="260" x2="27" y2="70" stroke="#7ea66a" stroke-width="5" stroke-linecap="round" opacity=".35"></line>
+      <line x1="0" y1="0" x2="27" y2="-44" stroke="#7ea66a" stroke-width="7" stroke-linecap="round"></line>
+      <line x1="0" y1="0" x2="0" y2="130" stroke="#9a9486" stroke-width="12" stroke-linecap="round"></line>
+      <circle cx="0" cy="260" r="9" fill="#c7842d"></circle>
+      <circle cx="55" cy="247" r="8" fill="#3998a7"></circle>
+      <circle cx="0" cy="0" r="10" fill="#b94c3d"></circle>
+      <circle cx="27" cy="-44" r="8" fill="#3a7b54"></circle>
+      <text x="-34" y="264" font-size="12" fill="#171814">M</text>
+      <text x="62" y="249" font-size="12" fill="#171814">E</text>
+      <text x="-34" y="4" font-size="12" fill="#171814">O</text>
+      <text x="34" y="-43" font-size="12" fill="#171814">K</text>
+      <text x="76" y="163" font-size="12" fill="#275c65">L = 215</text>
+      <text x="24" y="273" font-size="12" fill="#8a5f12">r = 50</text>
+      <text x="20" y="-13" font-size="12" fill="#3a7b54">a = 50</text>
+      <line x1="-55" y1="0" x2="135" y2="0" stroke="#5f5a50" stroke-width="1" marker-end="url(#arrow)"></line>
+      <line x1="0" y1="285" x2="0" y2="-30" stroke="#5f5a50" stroke-width="1" marker-end="url(#arrow)"></line>
+      <text x="142" y="4" font-size="12" fill="#5f5a50">x</text>
+      <text x="6" y="-28" font-size="12" fill="#5f5a50">z</text>
+    </svg>
+  </div>
+
+  <h2 id="zero">2. 为什么要区分相对角和绝对角</h2>
+  <p>控制和编码器通常喜欢把机械直立姿态当成零位。但几何计算不能直接把所有角都当成零，因为曲轴和小摇臂在直立姿态下本来就有安装角。</p>
+  <div class="math">
+theta_abs = theta_zero + motor_rel<br>
+beta_abs  = beta_zero  + q_rel
+  </div>
+  <p>其中：</p>
+  <div class="math">
+theta_zero = 8.4 deg<br>
+beta_zero  = 61.2 deg
+  </div>
+  <p>所以机械零位时：</p>
+  <div class="math">
+q_rel = 0, motor_rel = 0<br>
+theta_abs = 8.4 deg<br>
+beta_abs  = 61.2 deg
+  </div>
+
+  <h2 id="forward">3. 给定两个角时，如何计算 E 和 K</h2>
+  <h3>3.1 曲轴端点 E</h3>
+  <p><span class="mono">E</span> 绕电机轴 <span class="mono">M</span> 转，半径是 <span class="mono">r</span>。</p>
+  <div class="math">
+E_x = M_x + r * cos(theta_abs)<br>
+E_z = M_z + r * sin(theta_abs)<br>
+E   = M + r [cos(theta_abs), sin(theta_abs)]
+  </div>
+
+  <h3>3.2 小摇臂端点 K</h3>
+  <p><span class="mono">K</span> 绕膝盖轴 <span class="mono">O</span> 转，半径是 <span class="mono">a</span>。</p>
+  <div class="math">
+K_x = a * cos(beta_abs)<br>
+K_z = a * sin(beta_abs)<br>
+K   = a [cos(beta_abs), sin(beta_abs)]
+  </div>
+
+  <h3>3.3 连杆长度约束</h3>
+  <p>长连杆是刚体，所以 <span class="mono">E</span> 到 <span class="mono">K</span> 的距离永远等于 <span class="mono">L</span>。</p>
+  <div class="math">
+|E - K| = sqrt((E_x - K_x)^2 + (E_z - K_z)^2) = L
+  </div>
+
+  <h2 id="inverse">4. 已知 q_rel，如何解析反求 motor_rel</h2>
+  <p>这一步是关键。已知 <span class="mono">q_rel</span> 后，<span class="mono">K</span> 已经能直接算出来。未知的是 <span class="mono">E</span> 在曲轴圆上的位置，也就是 <span class="mono">theta_abs</span>。</p>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div>
+      <h3>先算 beta_abs</h3>
+      <div class="math">
+beta_abs = beta_zero + q_rel
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div>
+      <h3>再算 K 点</h3>
+      <div class="math">
+K = a [cos(beta_abs), sin(beta_abs)]
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div>
+      <h3>把问题变成两个圆交点</h3>
+      <p><span class="mono">E</span> 必须同时满足：</p>
+      <div class="math">
+|E - M| = r<br>
+|E - K| = L
+      </div>
+      <p>也就是：</p>
+      <div class="math">
+圆 1: center = M, radius = r<br>
+圆 2: center = K, radius = L
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">4</div>
+    <div>
+      <h3>定义从 M 指向 K 的向量 D</h3>
+      <div class="math">
+D = K - M = [D_x, D_z]<br>
+d = |D| = sqrt(D_x^2 + D_z^2)<br>
+phi = atan2(D_z, D_x)
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">5</div>
+    <div>
+      <h3>用余弦定理求夹角 alpha</h3>
+      <p>三角形的三个边长是：</p>
+      <div class="math">
+M-K = d<br>
+M-E = r<br>
+K-E = L
+      </div>
+      <p>在点 <span class="mono">M</span> 处，向量 <span class="mono">M->K</span> 和 <span class="mono">M->E</span> 的夹角叫 <span class="mono">alpha</span>。</p>
+      <div class="math">
+cos(alpha) = (r^2 + d^2 - L^2) / (2 * r * d)<br>
+alpha = acos((r^2 + d^2 - L^2) / (2 * r * d))
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">6</div>
+    <div>
+      <h3>得到两个候选曲轴绝对角</h3>
+      <div class="math">
+theta_abs_1 = phi + alpha<br>
+theta_abs_2 = phi - alpha
+      </div>
+      <p>两个候选角对应两个圆交点。真实机构只能走其中一个分支。可视化里选择“离上一次电机角最近”的那个，避免跳到另一边。</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">7</div>
+    <div>
+      <h3>把绝对曲轴角转成电机相对角</h3>
+      <div class="math">
+motor_rel = theta_abs - theta_zero
+      </div>
+    </div>
+  </div>
+
+  <div class="ok">
+    <strong>结论：</strong>膝盖这个机构是一自由度、二维曲柄连杆闭环，所以可以用两个圆交点解析求解，不需要牛顿法。
+  </div>
+
+  <h2 id="numbers">5. 数值例子</h2>
+  <h3>5.1 机械零位 q_rel = 0 deg</h3>
+  <table>
+    <tbody>
+      <tr><th>步骤</th><th>计算</th><th>结果</th></tr>
+      <tr><td>绝对角</td><td>theta_abs = 8.4 + 0<br>beta_abs = 61.2 + 0</td><td>theta_abs = 8.4 deg<br>beta_abs = 61.2 deg</td></tr>
+      <tr><td>E 点</td><td>E = [0,250] + 50[cos 8.4, sin 8.4]</td><td>E = [49.5, 257.3]</td></tr>
+      <tr><td>K 点</td><td>K = 50[cos 61.2, sin 61.2]</td><td>K = [24.1, 43.8]</td></tr>
+      <tr><td>验证连杆</td><td>|E-K| = sqrt((49.5-24.1)^2 + (257.3-43.8)^2)</td><td>|E-K| = 215.000 mm</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 最大弯曲 q_rel = -72 deg</h3>
+  <table>
+    <tbody>
+      <tr><th>步骤</th><th>计算</th><th>结果</th></tr>
+      <tr><td>小摇臂绝对角</td><td>beta_abs = 61.2 + (-72)</td><td>beta_abs = -10.8 deg</td></tr>
+      <tr><td>K 点</td><td>K = 50[cos(-10.8), sin(-10.8)]</td><td>K = [49.1, -9.4]</td></tr>
+      <tr><td>D 向量</td><td>D = K - M = [49.1, -9.4] - [0, 250]</td><td>D = [49.1, -259.4]</td></tr>
+      <tr><td>d 和 phi</td><td>d = sqrt(49.1^2 + (-259.4)^2)<br>phi = atan2(-259.4, 49.1)</td><td>d = 263.98 mm<br>phi = -79.28 deg</td></tr>
+      <tr><td>alpha</td><td>alpha = acos((50^2 + d^2 - 215^2) / (2*50*d))</td><td>alpha = 10.46 deg</td></tr>
+      <tr><td>候选角</td><td>theta_abs_1 = phi + alpha<br>theta_abs_2 = phi - alpha</td><td>-68.8 deg<br>-89.7 deg</td></tr>
+      <tr><td>选择分支</td><td>选当前连续分支</td><td>theta_abs = -68.8 deg</td></tr>
+      <tr><td>电机相对角</td><td>motor_rel = theta_abs - theta_zero = -68.8 - 8.4</td><td>motor_rel = -77.2 deg</td></tr>
+      <tr><td>验证连杆</td><td>E = [18.1, 203.4]<br>K = [49.1, -9.4]</td><td>|E-K| = 215.000 mm</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="algorithm">6. 最终算法</h2>
+  <p>这段伪代码就是最终可以写进程序里的版本。</p>
+  <div class="code">
+function solveMotorRel(q_rel):<br>
+&nbsp;&nbsp;theta_zero = deg2rad(8.4)<br>
+&nbsp;&nbsp;beta_zero = deg2rad(61.2)<br>
+&nbsp;&nbsp;r = 50<br>
+&nbsp;&nbsp;a = 50<br>
+&nbsp;&nbsp;L = 215<br>
+&nbsp;&nbsp;M = [0, 250]<br>
+<br>
+&nbsp;&nbsp;beta_abs = beta_zero + q_rel<br>
+&nbsp;&nbsp;K = a * [cos(beta_abs), sin(beta_abs)]<br>
+<br>
+&nbsp;&nbsp;D = K - M<br>
+&nbsp;&nbsp;d = norm(D)<br>
+&nbsp;&nbsp;phi = atan2(D.z, D.x)<br>
+<br>
+&nbsp;&nbsp;if d &gt; r + L or d &lt; abs(r - L):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;return unreachable<br>
+<br>
+&nbsp;&nbsp;alpha = acos((r*r + d*d - L*L) / (2*r*d))<br>
+&nbsp;&nbsp;theta_abs_1 = phi + alpha<br>
+&nbsp;&nbsp;theta_abs_2 = phi - alpha<br>
+<br>
+&nbsp;&nbsp;theta_abs = choose_continuous_branch(theta_abs_1, theta_abs_2)<br>
+&nbsp;&nbsp;motor_rel = theta_abs - theta_zero<br>
+&nbsp;&nbsp;return motor_rel
+  </div>
+
+  <h2 id="limits">7. 不可达条件和分支问题</h2>
+  <p>两个圆不一定总有交点。判断条件是：</p>
+  <div class="math">
+d &gt; r + L       <span class="note">// 两个圆离得太远</span><br>
+d &lt; |r - L|     <span class="note">// 一个圆完全包住另一个圆</span>
+  </div>
+  <p>只要出现这两种情况，机构在几何上不可达。此时不能强行算电机角，应该提示参数或目标角超出机构行程。</p>
+  <div class="warn">
+    <strong>分支选择也很重要。</strong>公式会给出两个 <span class="mono">theta_abs</span>。真实机构不会瞬间穿过死点跳到另一个圆交点，所以控制程序要保持分支连续。最简单的方式是选择离上一帧电机角最近的候选角。
+  </div>
+</main>
+
+<aside>
+  <nav class="nav">
+    <a href="#abstract">摘要</a>
+    <a href="#coordinates">坐标系和已知量</a>
+    <a href="#zero">零位角定义</a>
+    <a href="#forward">正向计算 E/K</a>
+    <a href="#inverse">解析反解 motor_rel</a>
+    <a href="#numbers">数值例子</a>
+    <a href="#algorithm">最终算法</a>
+    <a href="#limits">不可达和分支</a>
+  </nav>
+
+  <div class="box">
+    <h3>实时计算核对</h3>
+    <div class="controls">
+      <label>q_rel <output id="qOut">0.0 deg</output><input id="qRange" type="range" min="-72" max="45" value="0" step="0.1"></label>
+      <label>上一帧 motor_rel <output id="guessOut">0.0 deg</output><input id="guessRange" type="range" min="-120" max="80" value="0" step="0.1"></label>
+    </div>
+    <div class="readout">
+      <div><span>theta_abs</span><strong id="thetaAbsOut"></strong></div>
+      <div><span>motor_rel</span><strong id="motorRelOut"></strong></div>
+      <div><span>beta_abs</span><strong id="betaAbsOut"></strong></div>
+      <div><span>K</span><strong id="kOut"></strong></div>
+      <div><span>d = |K-M|</span><strong id="dOut"></strong></div>
+      <div><span>phi</span><strong id="phiOut"></strong></div>
+      <div><span>alpha</span><strong id="alphaOut"></strong></div>
+      <div><span>候选 1</span><strong id="cand1Out"></strong></div>
+      <div><span>候选 2</span><strong id="cand2Out"></strong></div>
+      <div><span>|E-K|</span><strong id="rodOut"></strong></div>
+    </div>
+    <p class="small">这里的实时结果和 3D 可视化页面使用同一套解析公式。</p>
+  </div>
+</aside>
+</div>
+
+<script>
+const constants = {
+  thetaZero: 8.4 * Math.PI / 180,
+  betaZero: 61.2 * Math.PI / 180,
+  r: 50,
+  a: 50,
+  L: 215,
+  M: { x: 0, z: 250 }
+};
+
+function degToRad(v) { return v * Math.PI / 180; }
+function radToDeg(v) { return v * 180 / Math.PI; }
+function pointText(p) { return `[${p.x.toFixed(1)}, ${p.z.toFixed(1)}]`; }
+function angleText(v) { return `${radToDeg(v).toFixed(1)} deg`; }
+function wrapDistance(a, b) {
+  return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+}
+function solve(qRel, guessMotorRel) {
+  const c = constants;
+  const betaAbs = c.betaZero + qRel;
+  const K = { x: c.a * Math.cos(betaAbs), z: c.a * Math.sin(betaAbs) };
+  const dx = K.x - c.M.x;
+  const dz = K.z - c.M.z;
+  const d = Math.hypot(dx, dz);
+  const phi = Math.atan2(dz, dx);
+  const reachable = d <= c.r + c.L && d >= Math.abs(c.r - c.L);
+  if (!reachable) return { reachable, betaAbs, K, d, phi };
+
+  const cosAlpha = (c.r * c.r + d * d - c.L * c.L) / (2 * c.r * d);
+  const alpha = Math.acos(Math.max(-1, Math.min(1, cosAlpha)));
+  const cand1 = phi + alpha;
+  const cand2 = phi - alpha;
+  const guessTheta = c.thetaZero + guessMotorRel;
+  const thetaAbs = wrapDistance(cand1, guessTheta) <= wrapDistance(cand2, guessTheta) ? cand1 : cand2;
+  const motorRel = thetaAbs - c.thetaZero;
+  const E = { x: c.M.x + c.r * Math.cos(thetaAbs), z: c.M.z + c.r * Math.sin(thetaAbs) };
+  const rod = Math.hypot(E.x - K.x, E.z - K.z);
+  return { reachable, betaAbs, K, d, phi, alpha, cand1, cand2, thetaAbs, motorRel, E, rod };
+}
+
+function updateLive() {
+  const qRel = degToRad(Number(document.getElementById("qRange").value));
+  const guess = degToRad(Number(document.getElementById("guessRange").value));
+  const s = solve(qRel, guess);
+  document.getElementById("qOut").textContent = `${radToDeg(qRel).toFixed(1)} deg`;
+  document.getElementById("guessOut").textContent = `${radToDeg(guess).toFixed(1)} deg`;
+  document.getElementById("betaAbsOut").textContent = angleText(s.betaAbs);
+  document.getElementById("kOut").textContent = pointText(s.K);
+  document.getElementById("dOut").textContent = `${s.d.toFixed(3)} mm`;
+  document.getElementById("phiOut").textContent = angleText(s.phi);
+  if (!s.reachable) {
+    for (const id of ["thetaAbsOut", "motorRelOut", "alphaOut", "cand1Out", "cand2Out", "rodOut"]) {
+      document.getElementById(id).textContent = "unreachable";
+    }
+    return;
+  }
+  document.getElementById("thetaAbsOut").textContent = angleText(s.thetaAbs);
+  document.getElementById("motorRelOut").textContent = angleText(s.motorRel);
+  document.getElementById("alphaOut").textContent = angleText(s.alpha);
+  document.getElementById("cand1Out").textContent = angleText(s.cand1);
+  document.getElementById("cand2Out").textContent = angleText(s.cand2);
+  document.getElementById("rodOut").textContent = `${s.rod.toFixed(3)} mm`;
+}
+
+document.getElementById("qRange").addEventListener("input", updateLive);
+document.getElementById("guessRange").addEventListener("input", updateLive);
+updateLive();
+</script>
+</body>
+</html>

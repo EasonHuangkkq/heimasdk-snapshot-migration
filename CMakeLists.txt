@@ -22,8 +22,11 @@ set(RMD_CAN_SDK_SOURCES
     src/rmd_ethercat_mt_device.cpp
     src/rmd_ethercat_pdo.cpp
     src/rmd_ethercat_snapshot.cpp
+    src/rmd_joint_path.cpp
+    src/rmd_leg_kinematics.cpp
     src/rmd_motion_plan.cpp
     src/rmd_motor_registry.cpp
+    src/rmd_process_lock.cpp
     src/rmd_protocol.cpp
     src/rmd_safety.cpp
     src/rmd_types.cpp
@@ -94,6 +97,38 @@ add_executable(rmd_ecat_position_targets
 )
 
 target_link_libraries(rmd_ecat_position_targets PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_joint_targets
+    examples/rmd_ecat_joint_targets.cpp
+)
+
+target_link_libraries(rmd_ecat_joint_targets PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_joint_path_demo
+    examples/rmd_ecat_joint_path_demo.cpp
+)
+
+target_link_libraries(rmd_ecat_joint_path_demo PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_mock_controller
+    examples/rmd_ecat_mock_controller.cpp
+)
+
+target_link_libraries(rmd_ecat_mock_controller PRIVATE
+    rmd_can_sdk
+)
+
+add_executable(rmd_ecat_fault_reset
+    examples/rmd_ecat_fault_reset.cpp
+)
+
+target_link_libraries(rmd_ecat_fault_reset PRIVATE
     rmd_can_sdk
 )
 
@@ -213,6 +248,125 @@ set_tests_properties(rmd_ecat_position_targets_rejects_zero_motor_index PROPERTI
 )
 
 add_test(
+    NAME rmd_ecat_joint_targets_rejects_missing_args
+    COMMAND rmd_ecat_joint_targets
+)
+set_tests_properties(rmd_ecat_joint_targets_rejects_missing_args PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "usage:"
+)
+
+add_test(
+    NAME rmd_ecat_joint_targets_rejects_bad_joint_name
+    COMMAND rmd_ecat_joint_targets /tmp/rmd_missing_config.xml 1000 500 10 5 100 right knee=-0.7
+)
+set_tests_properties(rmd_ecat_joint_targets_rejects_bad_joint_name PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "unknown joint target"
+)
+
+add_test(
+    NAME rmd_ecat_joint_targets_rejects_trailing_units
+    COMMAND rmd_ecat_joint_targets /tmp/rmd_missing_config.xml 1000 500 10 5 100 right hip_pitch=0.35rad
+)
+set_tests_properties(rmd_ecat_joint_targets_rejects_trailing_units PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "joint target must be a number"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_self_test
+    COMMAND rmd_ecat_joint_path_demo --audit-self-test
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_self_test PROPERTIES
+    PASS_REGULAR_EXPRESSION "joint path demo audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_ankle_pitch_swing
+    COMMAND rmd_ecat_joint_path_demo --audit-ankle-pitch-swing
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_ankle_pitch_swing PROPERTIES
+    PASS_REGULAR_EXPRESSION "ankle pitch swing audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_ankle_pitch_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-ankle-pitch-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_ankle_pitch_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "ankle pitch repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_knee_ankle_both_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-knee-ankle-both-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_knee_ankle_both_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "knee ankle both repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_knee_ankle_both_slow_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-knee-ankle-both-slow-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_knee_ankle_both_slow_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "knee ankle both slow repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_rejects_missing_args
+    COMMAND rmd_ecat_joint_path_demo
+)
+set_tests_properties(rmd_ecat_joint_path_demo_rejects_missing_args PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "usage:"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_rejects_left_side
+    COMMAND rmd_ecat_joint_path_demo /tmp/rmd_missing_config.xml 1000 500 10 5 100 left
+)
+set_tests_properties(rmd_ecat_joint_path_demo_rejects_left_side PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "only right leg is supported"
+)
+
+add_test(
+    NAME rmd_ecat_mock_controller_rejects_missing_args
+    COMMAND rmd_ecat_mock_controller
+)
+set_tests_properties(rmd_ecat_mock_controller_rejects_missing_args PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "usage:"
+)
+
+add_test(
+    NAME rmd_ecat_mock_controller_rejects_zero_policy_hz
+    COMMAND rmd_ecat_mock_controller /tmp/rmd_missing_config.xml 1000 0 500 10 0 0
+)
+set_tests_properties(rmd_ecat_mock_controller_rejects_zero_policy_hz PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "invalid numeric argument"
+)
+
+add_test(
+    NAME rmd_ecat_mock_controller_audit_rl_observation
+    COMMAND rmd_ecat_mock_controller --audit-rl-observation
+)
+set_tests_properties(rmd_ecat_mock_controller_audit_rl_observation PROPERTIES
+    PASS_REGULAR_EXPRESSION "rl observation audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_mock_controller_audit_mock_rl_policy
+    COMMAND rmd_ecat_mock_controller --audit-mock-rl-policy
+)
+set_tests_properties(rmd_ecat_mock_controller_audit_mock_rl_policy PROPERTIES
+    PASS_REGULAR_EXPRESSION "mock rl policy audit passed"
+)
+
+add_test(
     NAME rmd_ecat_step_response_rejects_invalid_period
     COMMAND rmd_ecat_step_response_test /tmp/rmd_missing_config.xml 3 0.03 1000 2000 500 10 0 /tmp/rmd_step.csv 0
 )
@@ -228,6 +382,15 @@ add_test(
 set_tests_properties(rmd_ecat_step_response_rejects_invalid_mode PROPERTIES
     WILL_FAIL TRUE
     FAIL_REGULAR_EXPRESSION "mode must fit int8"
+)
+
+add_test(
+    NAME rmd_ecat_pvt_torque_fit_rejects_too_few_points
+    COMMAND rmd_ecat_pvt_torque_fit /tmp/rmd_missing_config.xml 3 0 0.96 1 1000 10 1000 3000 1500 500 /tmp/rmd_fit.csv 0 200 0.9
+)
+set_tests_properties(rmd_ecat_pvt_torque_fit_rejects_too_few_points PROPERTIES
+    WILL_FAIL TRUE
+    FAIL_REGULAR_EXPRESSION "points must be at least 3"
 )
 
 add_test(

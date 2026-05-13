@@ -25,6 +25,7 @@ using RmdCanSdk::feedbackReady;
 using RmdCanSdk::findParamsForAlias;
 using RmdCanSdk::isActiveMotor;
 using RmdCanSdk::operationEnabled;
+using RmdCanSdk::operationFeedbackReady;
 
 struct Sample {
     int index = 0;
@@ -347,6 +348,36 @@ int main(int argc, char** argv) {
 
         applyRealtimeSettings(rtPriority);
 
+        int consecutiveOperationEnabled = 0;
+        for (int sample = 0; sample < settleSamples && !gStopRequested; ++sample) {
+            if (sdk.setMotorTarget(targets) != 0) {
+                std::cerr << "setMotorTarget failed while enabling motors\n";
+                disableMotors(sdk, targets);
+                return 1;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(periodUs));
+            int const actualStatus = sdk.getMotorActual(actuals);
+            if (operationFeedbackReady(sdk, actuals, actualStatus)) {
+                ++consecutiveOperationEnabled;
+            } else {
+                consecutiveOperationEnabled = 0;
+            }
+            if (consecutiveOperationEnabled >= 10) {
+                break;
+            }
+        }
+        if (gStopRequested) {
+            std::cerr << "stop requested while enabling motors\n";
+            disableMotors(sdk, targets);
+            return 130;
+        }
+        if (consecutiveOperationEnabled < 10) {
+            std::cerr << "motors did not reach operation enabled; consecutive enabled samples="
+                      << consecutiveOperationEnabled << "\n";
+            disableMotors(sdk, targets);
+            return 1;
+        }
+
         int const baselineIterations = std::max(1, baselineMs * 1000 / periodUs);
         int const responseIterations = std::max(1, responseMs * 1000 / periodUs);
         int const totalIterations = baselineIterations + responseIterations;
@@ -393,6 +424,13 @@ int main(int argc, char** argv) {
             sample.actualStatus = actualStatus;
             if (setStatus != 0) {
                 std::cerr << "setMotorTarget failed at sample " << i << "\n";
+                samples.push_back(sample);
+                disableMotors(sdk, targets);
+                writeCsv(csvPath, samples);
+                return 1;
+            }
+            if (!operationFeedbackReady(sdk, actuals, actualStatus)) {
+                std::cerr << "operation-enabled feedback lost at sample " << i << "\n";
                 samples.push_back(sample);
                 disableMotors(sdk, targets);
                 writeCsv(csvPath, samples);

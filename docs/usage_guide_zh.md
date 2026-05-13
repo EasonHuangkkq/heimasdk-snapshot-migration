@@ -767,20 +767,35 @@ EtherCAT MT_Device 会按原 heimaSDK 逻辑处理 Mode 8/5 下的 torque、kp�
 
 ## 12. 三缓冲、数据撕裂和实时性
 
-当前 SDK 里的高层电机数据交换使用 `RmdCanSdk::FrameBuffer<T>`，位置在：
+当前 SDK 里的底层 snapshot 交换算法只有一套：`RmdCanSdk::SnapshotBuffer<T>`，位置在：
+
+```text
+rmd_can_sdk/include/rmd_can_sdk/rmd_snapshot_buffer.h
+```
+
+高层电机和 IMU 数据交换使用语义名字 `RmdCanSdk::FrameBuffer<Frame>`，位置在：
 
 ```text
 rmd_can_sdk/include/rmd_can_sdk/rmd_realtime_core.h
 ```
 
-这是明确的 SPSC 三缓冲所有权模型：
+`FrameBuffer<Frame>` 是 `SnapshotBuffer<Frame>` 的别名。当前 repo 不再保留旧的 `TripleBuffer<T>` 实现，避免同时维护两份并发算法。
 
-- `writing_`: producer 独占写缓冲
-- `latest_`: 原子交换的最新完整帧
-- `reading_`: consumer 独占读缓冲
-- `dirty_`: 标记 producer 是否发布了新帧，避免 consumer 重复读取时把旧帧轮换回 latest
+这个 buffer 是 SPSC snapshot buffer，也就是一个 producer、一个 consumer。它不是队列，不保证每一帧都被消费；它保证的是 consumer 读到完整快照，不读到 producer 正在写的半帧。
 
-发布和读取通过 `std::atomic<int>::exchange(..., std::memory_order_acq_rel)` 交换缓冲区下标。这样 producer 不会写 consumer 正在读的 buffer，consumer 也不会读 producer 正在写的 buffer，所以不会出现一半字段来自旧帧、一半字段来自新帧的撕裂快照。
+当前实现用一个原子 `latest_` 同时保存版本号和 slot index：
+
+```text
+latest_ = (version << 2) | index
+```
+
+producer 写完 `writing_` slot 后，通过 `latest_.exchange(..., std::memory_order_acq_rel)` 发布最新完整帧。consumer 发现版本变化后，通过 CAS 归还当前 `reading_` slot，并取得最新完整帧的 slot。这样 producer 不会写 consumer 正在读的 buffer，consumer 也不会读 producer 正在写的 buffer，所以不会出现一半字段来自旧帧、一半字段来自新帧的撕裂快照。
+
+详细设计、当前重复实现的原因、使用约束和后续合并方向见：
+
+```text
+docs/realtime_snapshot_buffers_zh.md
+```
 
 混合 CAN/EtherCAT 下没有让多个 backend 线程共用同一个 SPSC 三缓冲：
 
@@ -800,12 +815,14 @@ rmd_can_sdk/include/rmd_can_sdk/rmd_realtime_core.h
 - backend status 包含原子发布的运行指标：周期数、deadline miss、last/max cycle ns、
   stale frame、CAN RX timeout、EtherCAT incomplete WKC domain 计数。
 - SocketCAN 的 `write/read/poll` 仍然是 Linux 系统调用，不等同于 EtherCAT master 那种硬实时路径。
-- 当前线程还没有设置 `SCHED_FIFO`、CPU affinity、内存锁页。
+- EtherCAT backend 支持通过环境变量设置 realtime thread 的 `SCHED_FIFO`、CPU affinity 和
+  `mlockall()`；部分 bench-test 工具也有 app 线程 realtime 设置入口。实际是否生效仍取决于
+  运行权限、内核配置和目标机调度环境。
 - `setMotorTarget()` 和 `getMotorActual()` 假设由一个上层控制线程调用；不要多个 app 线程同时读写同一个 SDK 实例。
 
 所以现在的状态是：数据快照层面已经按三缓冲处理撕裂风险；backend 循环内的动态分配和状态读写
-竞争已经进一步收紧；真正上机器人时仍需要 Thor 侧 `SCHED_FIFO`、CPU affinity、`mlockall()` 和
-总线负载/jitter 验证。
+竞争已经进一步收紧；真正上机器人时仍需要在目标机上确认 `SCHED_FIFO`、CPU affinity、
+`mlockall()` 和总线负载/jitter。
 
 ## 13. 安全建议
 

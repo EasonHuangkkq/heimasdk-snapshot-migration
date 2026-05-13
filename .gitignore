@@ -33,6 +33,18 @@ core
 core.*
 Screenshot*.png
 
+# Local archives and third-party documents whose redistribution must be reviewed
+*.pdf
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Local environment files
+.env
+.env.*
+
 # Editor and OS files
 .vscode/
 .idea/
@@ -42,6 +54,9 @@ Screenshot*.png
 
 # Local Codex runtime mount
 .codex
+
+# Local agent workflow notes
+docs/superpowers/
 
 # Local feature worktrees
 .worktrees/

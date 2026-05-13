@@ -1,13 +1,14 @@
 #include "rmd_can_sdk/heima_driver_sdk.h"
 #include "rmd_can_sdk/rmd_bench_workflow.h"
 #include "rmd_can_sdk/rmd_can_config.h"
+#include "rmd_can_sdk/rmd_leg_kinematics.h"
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdlib>
 #include <exception>
-#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -51,6 +52,14 @@ struct AppLoopTimingRow {
     int actualStatus = -1;
     int feedbackReady = -1;
     int consecutiveMissedFeedback = 0;
+};
+
+struct JointAssignmentState {
+    RmdCanSdk::LegJointTargets joints;
+    bool hasHipPitch = false;
+    bool hasKneePitch = false;
+    bool hasAnklePitch = false;
+    bool hasAnkleRoll = false;
 };
 
 void requestStop(int) {
@@ -101,47 +110,111 @@ int parseNonNegative(char const* text, int fallback) {
     return static_cast<int>(value);
 }
 
-bool parseFloat(char const* text, float& out) {
-    if (text == nullptr || *text == '\0') {
+bool parseDouble(std::string const& text, double& out) {
+    if (text.empty()) {
         return false;
     }
     char* end = nullptr;
-    float const value = std::strtof(text, &end);
-    if (end == text || *end != '\0') {
+    double const value = std::strtod(text.c_str(), &end);
+    if (end == text.c_str() || *end != '\0') {
         return false;
     }
     out = value;
     return true;
 }
 
-bool parseTargetAssignment(char const* text, int& motorIndex, float& position) {
+void printUsage(char const* program) {
+    std::cerr << "usage: " << program
+              << " <config.xml> <hold_ms> <max_current> <settle_samples> <period_ms> <ramp_ms>"
+              << " right hip_pitch=<rad> knee_pitch=<rad> ankle_pitch=<rad> ankle_roll=<rad>\n";
+    std::cerr << "example: " << program
+              << " config/configOriginal_heima.xml 60000 500 450 5 8000"
+              << " right hip_pitch=0.35 knee_pitch=-0.70 ankle_pitch=0.35 ankle_roll=0\n";
+    std::cerr << "env: RMD_ECAT_RT_CPU/RMD_ECAT_RT_PRIORITY configure the EtherCAT backend; "
+                 "RMD_ECAT_APP_CPU/RMD_ECAT_APP_RT_PRIORITY configure this app loop\n";
+}
+
+bool setJointValue(std::string const& name, double value, JointAssignmentState& state) {
+    if (name == "hip_pitch") {
+        if (state.hasHipPitch) {
+            std::cerr << "duplicate joint target: " << name << "\n";
+            return false;
+        }
+        state.joints.hipPitchRad = value;
+        state.hasHipPitch = true;
+        return true;
+    }
+    if (name == "knee_pitch") {
+        if (state.hasKneePitch) {
+            std::cerr << "duplicate joint target: " << name << "\n";
+            return false;
+        }
+        state.joints.kneePitchRad = value;
+        state.hasKneePitch = true;
+        return true;
+    }
+    if (name == "ankle_pitch") {
+        if (state.hasAnklePitch) {
+            std::cerr << "duplicate joint target: " << name << "\n";
+            return false;
+        }
+        state.joints.anklePitchRad = value;
+        state.hasAnklePitch = true;
+        return true;
+    }
+    if (name == "ankle_roll") {
+        if (state.hasAnkleRoll) {
+            std::cerr << "duplicate joint target: " << name << "\n";
+            return false;
+        }
+        state.joints.ankleRollRad = value;
+        state.hasAnkleRoll = true;
+        return true;
+    }
+    std::cerr << "unknown joint target: " << name << "\n";
+    return false;
+}
+
+bool parseJointAssignment(char const* text, JointAssignmentState& state) {
     std::string const spec = text == nullptr ? "" : text;
     std::size_t const equals = spec.find('=');
     if (equals == std::string::npos || equals == 0 || equals + 1 >= spec.size()) {
-        std::cerr << "target assignment must be motor=position\n";
+        std::cerr << "joint target assignment must be name=value\n";
         return false;
     }
 
-    std::string const motorText = spec.substr(0, equals);
-    std::string const positionText = spec.substr(equals + 1);
-    char* end = nullptr;
-    long const motor = std::strtol(motorText.c_str(), &end, 10);
-    if (end == motorText.c_str() || *end != '\0') {
-        std::cerr << "motor index must be an integer\n";
-        return false;
-    }
-    if (motor <= 0) {
-        std::cerr << "motor index must be positive\n";
+    std::string const name = spec.substr(0, equals);
+    std::string const valueText = spec.substr(equals + 1);
+    if (name != "hip_pitch" && name != "knee_pitch" && name != "ankle_pitch" && name != "ankle_roll") {
+        std::cerr << "unknown joint target: " << name << "\n";
         return false;
     }
 
-    float parsedPosition = 0.0f;
-    if (!parseFloat(positionText.c_str(), parsedPosition)) {
-        std::cerr << "target position must be a number\n";
+    double value = 0.0;
+    if (!parseDouble(valueText, value)) {
+        std::cerr << "joint target must be a number\n";
         return false;
     }
-    motorIndex = static_cast<int>(motor) - 1;
-    position = parsedPosition;
+    return setJointValue(name, value, state);
+}
+
+bool requireCompleteJointTargets(JointAssignmentState const& state) {
+    if (!state.hasHipPitch) {
+        std::cerr << "missing joint target: hip_pitch\n";
+        return false;
+    }
+    if (!state.hasKneePitch) {
+        std::cerr << "missing joint target: knee_pitch\n";
+        return false;
+    }
+    if (!state.hasAnklePitch) {
+        std::cerr << "missing joint target: ankle_pitch\n";
+        return false;
+    }
+    if (!state.hasAnkleRoll) {
+        std::cerr << "missing joint target: ankle_roll\n";
+        return false;
+    }
     return true;
 }
 
@@ -254,6 +327,32 @@ void printTimingSummary(LoopTimingStats const& stats, int periodMs) {
               << "\n";
 }
 
+bool assignMotorTarget(RmdCanSdk::Config const& config,
+                       std::vector<float>& requestedTargets,
+                       std::vector<bool>& hasRequestedTarget,
+                       int motorAlias,
+                       double position) {
+    int const motorIndex = motorAlias - 1;
+    if (motorAlias <= 0 || motorIndex >= config.totalMotorCount) {
+        std::cerr << "motor alias outside configured motor count: " << motorAlias << "\n";
+        return false;
+    }
+    RmdCanSdk::MotorParameters const* params = findParamsForAlias(config, motorAlias);
+    if (params == nullptr) {
+        std::cerr << "missing motor parameters for alias " << motorAlias << "\n";
+        return false;
+    }
+    if (position < params->minimumPosition || position > params->maximumPosition) {
+        std::cerr << "target for motor " << motorAlias
+                  << " outside configured position limits ["
+                  << params->minimumPosition << ", " << params->maximumPosition << "]\n";
+        return false;
+    }
+    requestedTargets[static_cast<std::size_t>(motorIndex)] = static_cast<float>(position);
+    hasRequestedTarget[static_cast<std::size_t>(motorIndex)] = true;
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -261,13 +360,7 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, requestStop);
 
     if (argc < 8) {
-        std::cerr << "usage: " << argv[0]
-                  << " <config.xml> <hold_ms> <max_current> <settle_samples> <period_ms> <ramp_ms>"
-                  << " <motor=position> [motor=position ...]\n";
-        std::cerr << "example: " << argv[0]
-                  << " config/configOriginal_heima.xml 30000 500 450 5 8000 3=0.25 4=-0.5\n";
-        std::cerr << "env: RMD_ECAT_RT_CPU/RMD_ECAT_RT_PRIORITY configure the EtherCAT backend; "
-                     "RMD_ECAT_APP_CPU/RMD_ECAT_APP_RT_PRIORITY configure this app loop\n";
+        printUsage(argv[0]);
         return 2;
     }
 
@@ -281,6 +374,23 @@ int main(int argc, char** argv) {
         std::cerr << "invalid numeric argument\n";
         return 2;
     }
+
+    std::string const side = argv[7];
+    if (side != "right") {
+        std::cerr << "only right leg is supported in this tester\n";
+        return 2;
+    }
+
+    JointAssignmentState jointState;
+    for (int arg = 8; arg < argc; ++arg) {
+        if (!parseJointAssignment(argv[arg], jointState)) {
+            return 2;
+        }
+    }
+    if (!requireCompleteJointTargets(jointState)) {
+        return 2;
+    }
+
     bool const appRealtimeRequested =
         std::getenv("RMD_ECAT_APP_RT_PRIORITY") != nullptr || std::getenv("RMD_ECAT_APP_CPU") != nullptr;
     RmdCanSdk::RealtimeThreadSettings const appRealtimeSettings =
@@ -295,6 +405,16 @@ int main(int argc, char** argv) {
     }
 
     try {
+        RmdCanSdk::LegMotorTargets const resolvedMotors =
+            RmdCanSdk::solveRightLegMotorsFromJoints(jointState.joints);
+        std::cout << std::fixed << std::setprecision(6)
+                  << "resolved right leg motors:"
+                  << " motor3=" << resolvedMotors.hipPitchMotorRad
+                  << " motor4=" << resolvedMotors.kneeMotorRad
+                  << " motor5=" << resolvedMotors.ankleMotorERad
+                  << " motor6=" << resolvedMotors.ankleMotorFRad
+                  << "\n";
+
         RmdCanSdk::Config const parsedConfig = RmdCanSdk::loadConfig(configPath);
         int const countFromConfig = parsedConfig.totalMotorCount;
         if (countFromConfig <= 0) {
@@ -304,33 +424,11 @@ int main(int argc, char** argv) {
 
         std::vector<float> requestedTargets(static_cast<std::size_t>(countFromConfig), 0.0f);
         std::vector<bool> hasRequestedTarget(static_cast<std::size_t>(countFromConfig), false);
-        for (int arg = 7; arg < argc; ++arg) {
-            int motorIndex = -1;
-            float position = 0.0f;
-            if (!parseTargetAssignment(argv[arg], motorIndex, position)) {
-                return 2;
-            }
-            if (motorIndex >= countFromConfig) {
-                std::cerr << "motor index outside configured motor count\n";
-                return 2;
-            }
-            if (hasRequestedTarget[static_cast<std::size_t>(motorIndex)]) {
-                std::cerr << "duplicate target for motor " << motorIndex + 1 << "\n";
-                return 2;
-            }
-            RmdCanSdk::MotorParameters const* params = findParamsForAlias(parsedConfig, motorIndex + 1);
-            if (params == nullptr) {
-                std::cerr << "missing motor parameters for alias " << motorIndex + 1 << "\n";
-                return 2;
-            }
-            if (position < params->minimumPosition || position > params->maximumPosition) {
-                std::cerr << "target for motor " << motorIndex + 1
-                          << " outside configured position limits ["
-                          << params->minimumPosition << ", " << params->maximumPosition << "]\n";
-                return 2;
-            }
-            requestedTargets[static_cast<std::size_t>(motorIndex)] = position;
-            hasRequestedTarget[static_cast<std::size_t>(motorIndex)] = true;
+        if (!assignMotorTarget(parsedConfig, requestedTargets, hasRequestedTarget, 3, resolvedMotors.hipPitchMotorRad) ||
+            !assignMotorTarget(parsedConfig, requestedTargets, hasRequestedTarget, 4, resolvedMotors.kneeMotorRad) ||
+            !assignMotorTarget(parsedConfig, requestedTargets, hasRequestedTarget, 5, resolvedMotors.ankleMotorERad) ||
+            !assignMotorTarget(parsedConfig, requestedTargets, hasRequestedTarget, 6, resolvedMotors.ankleMotorFRad)) {
+            return 2;
         }
 
         auto& sdk = DriverSDK::DriverSDK::instance();
@@ -405,7 +503,7 @@ int main(int argc, char** argv) {
             targets[index].kp = 0.0f;
             targets[index].kd = 0.0f;
             targets[index].enabled = 1;
-            std::cout << "position target motor " << active + 1
+            std::cout << "joint target motor " << active + 1
                       << " start=" << startPositions[index]
                       << " final=" << finalPositions[index]
                       << " max_current=" << maxCurrent
@@ -477,7 +575,7 @@ int main(int argc, char** argv) {
 
             auto const setTargetStart = std::chrono::steady_clock::now();
             if (sdk.setMotorTarget(targets) != 0) {
-                std::cerr << "setMotorTarget failed while holding position targets\n";
+                std::cerr << "setMotorTarget failed while holding joint targets\n";
                 disableMotors(sdk, targets);
                 return 1;
             }
@@ -501,7 +599,7 @@ int main(int argc, char** argv) {
                     printActuals("hold", i, sdk, actuals);
                     printActualsMs = elapsedMs(printStart, std::chrono::steady_clock::now());
                     if (consecutiveMissedFeedback >= MaxConsecutiveMissedFeedback) {
-                        std::cerr << "operation-enabled feedback lost while holding position targets for "
+                        std::cerr << "operation-enabled feedback lost while holding joint targets for "
                                   << consecutiveMissedFeedback << " consecutive monitor samples\n";
                         disableMotors(sdk, targets);
                         return 1;
@@ -562,7 +660,7 @@ int main(int argc, char** argv) {
                       << " rows=" << appTimingRows.size() << "\n";
         }
     } catch (std::exception const& ex) {
-        std::cerr << "position targets failed: " << ex.what() << "\n";
+        std::cerr << "joint targets failed: " << ex.what() << "\n";
         return 1;
     }
 

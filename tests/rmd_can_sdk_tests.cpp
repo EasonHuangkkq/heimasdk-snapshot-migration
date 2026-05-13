@@ -8,9 +8,12 @@
 #include "rmd_can_sdk/rmd_ethercat_pdo.h"
 #include "rmd_can_sdk/rmd_ethercat_snapshot.h"
 #include "rmd_can_sdk/rmd_ethercat_target_frame.h"
+#include "rmd_can_sdk/rmd_joint_path.h"
+#include "rmd_can_sdk/rmd_leg_kinematics.h"
 #include "rmd_can_sdk/rmd_motor_registry.h"
 #include "rmd_can_sdk/rmd_motor_backend.h"
 #include "rmd_can_sdk/rmd_motion_plan.h"
+#include "rmd_can_sdk/rmd_process_lock.h"
 #include "rmd_can_sdk/rmd_protocol.h"
 #include "rmd_can_sdk/rmd_realtime_core.h"
 #include "rmd_can_sdk/rmd_safety.h"
@@ -38,6 +41,10 @@ void require(bool condition, std::string const& message) {
         std::cerr << "FAIL: " << message << "\n";
         std::exit(1);
     }
+}
+
+void requireNear(double actual, double expected, double tolerance, char const* message) {
+    require(std::fabs(actual - expected) <= tolerance, message);
 }
 
 std::string writeTempConfig() {
@@ -762,6 +769,54 @@ void testBenchWorkflowHelpersUseSharedMotorSemantics() {
     require(!RmdCanSdk::operationEnabled(0x0031), "bench workflow rejects switched-on-disabled status");
     require(RmdCanSdk::operationEnabled(0x0037), "bench workflow accepts operation-enabled status");
     require(RmdCanSdk::operationEnabled(0x0237), "bench workflow masks vendor/status high bits");
+    require(RmdCanSdk::operationFeedbackReady({0, 1},
+                                              std::vector<DriverSDK::motorActualStruct>{
+                                                  DriverSDK::motorActualStruct{0.0f, 0.0f, 0.0f, 0, 0, 0, 0x0237, 0},
+                                                  DriverSDK::motorActualStruct{0.0f, 0.0f, 0.0f, 0, 0, 0, 0x1237, 0}},
+                                              0),
+            "bench workflow accepts active motors that are all operation enabled");
+    require(!RmdCanSdk::operationFeedbackReady({0, 1},
+                                               std::vector<DriverSDK::motorActualStruct>{
+                                                   DriverSDK::motorActualStruct{0.0f, 0.0f, 0.0f, 0, 0, 0, 0x0237, 0},
+                                                   DriverSDK::motorActualStruct{0.0f, 0.0f, 0.0f, 0, 0, 0, 0x0231, 0}},
+                                               0),
+            "bench workflow rejects feedback that is valid but not operation enabled");
+
+    require(RmdCanSdk::parseNonNegativeInt("0", 7) == 0,
+            "bench workflow accepts zero for non-negative CLI arguments");
+    require(RmdCanSdk::parseNonNegativeInt("12", 7) == 12,
+            "bench workflow parses positive non-negative CLI arguments");
+    require(RmdCanSdk::parseNonNegativeInt("-1", 7) < 0,
+            "bench workflow rejects negative CLI arguments");
+    require(RmdCanSdk::parseNonNegativeInt("", 7) < 0,
+            "bench workflow rejects empty CLI arguments");
+    require(RmdCanSdk::parseNonNegativeInt("12ms", 7) < 0,
+            "bench workflow rejects CLI arguments with trailing units");
+    require(RmdCanSdk::parseNonNegativeInt("1abc", 7) < 0,
+            "bench workflow rejects CLI arguments with trailing text");
+
+    auto defaultRt = RmdCanSdk::parseRealtimeSettings(nullptr, nullptr, 0, -1);
+    require(defaultRt.valid && defaultRt.priority == 0 && defaultRt.cpu == -1,
+            "bench workflow leaves realtime app settings disabled by default");
+    auto appRt = RmdCanSdk::parseRealtimeSettings("60", "10", 0, -1);
+    require(appRt.valid && appRt.priority == 60 && appRt.cpu == 10,
+            "bench workflow parses independent app realtime priority and CPU");
+    require(!RmdCanSdk::parseRealtimeSettings("60ms", "10", 0, -1).valid,
+            "bench workflow rejects realtime priority with trailing units");
+    require(!RmdCanSdk::parseRealtimeSettings("60", "cpu10", 0, -1).valid,
+            "bench workflow rejects realtime CPU with trailing text");
+
+    int consecutiveReady = 0;
+    for (int i = 0; i < 9; ++i) {
+        require(!RmdCanSdk::recordConsecutiveReady(true, consecutiveReady, 10),
+                "bench workflow waits until the required ready window is full");
+    }
+    require(RmdCanSdk::recordConsecutiveReady(true, consecutiveReady, 10),
+            "bench workflow reports a full ready window");
+    require(consecutiveReady == 10, "bench workflow tracks the ready window count");
+    require(!RmdCanSdk::recordConsecutiveReady(false, consecutiveReady, 10),
+            "bench workflow resets the ready window after a missed sample");
+    require(consecutiveReady == 0, "bench workflow clears ready count after missed sample");
 }
 
 class FakeBackend final : public RmdCanSdk::MotorBackend {
@@ -791,11 +846,113 @@ void testMotorBackendInterface() {
     require(!backend.status().running, "backend reports stopped after stop");
 }
 
+void testLegKinematicsKneeMatchesVisualizer() {
+    requireNear(RmdCanSdk::solveKneeJointFromMotor(-0.49, -0.70),
+                -0.6963037431797561,
+                1.0e-6,
+                "knee motor -0.49 maps to expected knee pitch");
+    requireNear(RmdCanSdk::solveKneeMotorFromJoint(-0.70, -0.49),
+                -0.49365668695563136,
+                1.0e-6,
+                "knee pitch -0.70 maps to expected motor angle");
+}
+
+void testLegKinematicsAnkleMatchesVisualizer() {
+    RmdCanSdk::LegJointTargets joints;
+    joints.anklePitchRad = 0.35;
+    joints.ankleRollRad = 0.0;
+    auto motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+    requireNear(motors.ankleMotorERad,
+                0.47671326565604955,
+                1.0e-6,
+                "ankle pitch 0.35 maps to expected E motor");
+    requireNear(motors.ankleMotorFRad,
+                0.40455930135524915,
+                1.0e-6,
+                "ankle pitch 0.35 maps to expected F motor");
+
+    auto ankle = RmdCanSdk::solveAnkleJointsFromMotors(0.49, 0.41, 0.35, 0.0);
+    requireNear(ankle.pitchRad,
+                0.35718857681375055,
+                1.0e-6,
+                "ankle motors 0.49/0.41 map back to expected pitch");
+    requireNear(ankle.rollRad,
+                0.005450772490620695,
+                1.0e-6,
+                "ankle motors 0.49/0.41 map back to near-zero roll");
+}
+
+void testLegKinematicsKneeGridRoundTripsAndStaysContinuous() {
+    double previousMotor = RmdCanSdk::solveKneeMotorFromJoint(-1.0, -0.84);
+    for (int i = 0; i <= 20; ++i) {
+        double const knee = -1.0 + 0.05 * static_cast<double>(i);
+        double const motor = RmdCanSdk::solveKneeMotorFromJoint(knee, previousMotor);
+        double const roundTrip = RmdCanSdk::solveKneeJointFromMotor(motor, knee);
+        requireNear(roundTrip, knee, 1.0e-6, "knee grid joint->motor->joint round-trip stays accurate");
+        require(std::fabs(motor - previousMotor) < 0.09 || i == 0,
+                "knee grid motor solution stays on the continuous linkage branch");
+        previousMotor = motor;
+    }
+}
+
+void testLegKinematicsAnklePitchGridRoundTripsAndStaysContinuous() {
+    RmdCanSdk::LegMotorTargets previousMotors;
+    for (int i = 0; i <= 14; ++i) {
+        double const pitch = 0.025 * static_cast<double>(i);
+        RmdCanSdk::LegJointTargets joints;
+        joints.anklePitchRad = pitch;
+        joints.ankleRollRad = 0.0;
+        RmdCanSdk::LegMotorTargets const motors =
+            RmdCanSdk::solveRightLegMotorsFromJoints(joints, previousMotors);
+        RmdCanSdk::AnkleJointAngles const roundTrip =
+            RmdCanSdk::solveAnkleJointsFromMotors(motors.ankleMotorERad, motors.ankleMotorFRad, pitch, 0.0);
+        requireNear(roundTrip.pitchRad, pitch, 1.0e-6, "ankle pitch grid round-trip returns pitch");
+        requireNear(roundTrip.rollRad, 0.0, 1.0e-6, "ankle pitch grid round-trip returns zero roll");
+        require(std::fabs(motors.ankleMotorERad - previousMotors.ankleMotorERad) < 0.05 || i == 0,
+                "ankle pitch grid E motor solution stays continuous");
+        require(std::fabs(motors.ankleMotorFRad - previousMotors.ankleMotorFRad) < 0.05 || i == 0,
+                "ankle pitch grid F motor solution stays continuous");
+        previousMotors = motors;
+    }
+}
+
+void testLegJointPathInterpolatesAndValidatesWaypoints() {
+    std::vector<RmdCanSdk::LegJointWaypoint> path{
+        RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.35, 0.0}},
+        RmdCanSdk::LegJointWaypoint{1000, RmdCanSdk::LegJointTargets{0.37, -0.68, 0.33, 0.02}},
+        RmdCanSdk::LegJointWaypoint{2000, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.35, 0.0}},
+    };
+
+    std::string error;
+    require(RmdCanSdk::validateLegJointPath(path, &error), "valid joint path accepts increasing waypoint times");
+
+    auto before = RmdCanSdk::sampleLegJointPath(path, -50);
+    requireNear(before.hipPitchRad, 0.35, 1.0e-9, "joint path clamps before first waypoint");
+
+    auto middle = RmdCanSdk::sampleLegJointPath(path, 500);
+    requireNear(middle.hipPitchRad, 0.36, 1.0e-9, "joint path interpolates hip pitch");
+    requireNear(middle.kneePitchRad, -0.69, 1.0e-9, "joint path interpolates knee pitch");
+    requireNear(middle.anklePitchRad, 0.34, 1.0e-9, "joint path interpolates ankle pitch");
+    requireNear(middle.ankleRollRad, 0.01, 1.0e-9, "joint path interpolates ankle roll");
+
+    auto after = RmdCanSdk::sampleLegJointPath(path, 2500);
+    requireNear(after.kneePitchRad, -0.70, 1.0e-9, "joint path clamps after last waypoint");
+
+    std::vector<RmdCanSdk::LegJointWaypoint> nonIncreasing{
+        RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{}},
+        RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{}},
+    };
+    require(!RmdCanSdk::validateLegJointPath(nonIncreasing, &error),
+            "joint path rejects non-increasing waypoint times");
+    require(error.find("strictly increasing") != std::string::npos,
+            "joint path validation reports non-increasing time reason");
+}
+
 void testAtomicBackendStatusPublishesDeterministicMetrics() {
     RmdCanSdk::AtomicBackendStatus status;
     status.setRunning(true);
-    status.recordCycle(900, 1000);
-    status.recordCycle(1200, 1000);
+    status.recordCycle(900, 1000, 25);
+    status.recordCycle(1200, 1000, 75);
     status.recordRxTimeout();
     status.recordWcIncomplete();
     status.recordStaleFrame();
@@ -809,9 +966,29 @@ void testAtomicBackendStatusPublishesDeterministicMetrics() {
     require(snapshot.deadlineMissCount == 1, "atomic backend status counts deadline misses");
     require(snapshot.lastCycleNs == 1200, "atomic backend status publishes last cycle duration");
     require(snapshot.maxCycleNs == 1200, "atomic backend status keeps max cycle duration");
+    require(snapshot.lastWakeupLatencyNs == 75, "atomic backend status publishes last wakeup latency");
+    require(snapshot.maxWakeupLatencyNs == 75, "atomic backend status keeps max wakeup latency");
+    require(snapshot.lateWakeupCount == 2, "atomic backend status counts late wakeups");
     require(snapshot.rxTimeoutCount == 1, "atomic backend status counts CAN RX timeouts");
     require(snapshot.wcIncompleteCount == 1, "atomic backend status counts EtherCAT incomplete WKC domains");
     require(snapshot.staleFrameCount == 1, "atomic backend status counts stale published frames");
+}
+
+void testProcessLockRejectsSecondOwner() {
+    std::string const path = "/tmp/rmd_can_sdk_process_lock_test.lock";
+
+    RmdCanSdk::ProcessLock first;
+    require(first.acquire(path), "first process lock acquire succeeds");
+    require(first.acquired(), "first process lock reports acquired");
+
+    RmdCanSdk::ProcessLock second;
+    require(!second.acquire(path), "second process lock acquire fails while first owner holds lock");
+    require(!second.acquired(), "failed process lock reports not acquired");
+
+    first.release();
+
+    RmdCanSdk::ProcessLock third;
+    require(third.acquire(path), "process lock can be acquired after owner releases it");
 }
 
 void testRmdCanBackendConstructsWithoutOpeningSocket() {
@@ -991,10 +1168,13 @@ void testDriverSdkReportsUninitializedBeforeInit() {
     DriverSDK::DriverSDK& sdk = DriverSDK::DriverSDK::instance();
     std::vector<DriverSDK::motorTargetStruct> targets(1);
     std::vector<DriverSDK::motorActualStruct> actuals(1);
+    std::vector<DriverSDK::backendStatusStruct> backendStatus(1);
     require(sdk.setMotorTarget(targets) == std::numeric_limits<int>::min(),
             "setMotorTarget rejects calls before successful init");
     require(sdk.getMotorActual(actuals) == std::numeric_limits<int>::min(),
             "getMotorActual rejects calls before successful init");
+    require(sdk.getBackendStatus(backendStatus) == std::numeric_limits<int>::min(),
+            "getBackendStatus rejects calls before successful init");
 }
 
 void testDriverSdkRejectsSetModeAfterInit() {
@@ -1213,8 +1393,8 @@ void testFrameBufferSequenceNeverMovesBackward() {
     producer.join();
 }
 
-void testTripleBufferSnapshotsAreWholeFrames() {
-    RmdCanSdk::TripleBuffer<std::vector<int>> buffer(std::vector<int>{0, 0, 0});
+void testSnapshotBufferSnapshotsAreWholeFrames() {
+    RmdCanSdk::SnapshotBuffer<std::vector<int>> buffer(std::vector<int>{0, 0, 0});
     std::atomic<bool> done{false};
     std::thread producer([&]() {
         for (int i = 1; i <= 20000; ++i) {
@@ -1227,13 +1407,13 @@ void testTripleBufferSnapshotsAreWholeFrames() {
     while (!done.load(std::memory_order_acquire)) {
         buffer.readInto(snapshot);
         require(snapshot[0] == snapshot[1] && snapshot[1] == snapshot[2],
-                "triple buffer consumer must observe a whole published frame");
+                "SnapshotBuffer consumer must observe a whole published frame");
     }
     producer.join();
 }
 
-void testTripleBufferSequenceNeverMovesBackward() {
-    RmdCanSdk::TripleBuffer<std::vector<int>> buffer(std::vector<int>{0, 0});
+void testSnapshotBufferSequenceNeverMovesBackward() {
+    RmdCanSdk::SnapshotBuffer<std::vector<int>> buffer(std::vector<int>{0, 0});
     std::atomic<bool> done{false};
     std::thread producer([&]() {
         for (int i = 1; i <= 100000; ++i) {
@@ -1249,11 +1429,44 @@ void testTripleBufferSequenceNeverMovesBackward() {
     int lastSeen = 0;
     while (!done.load(std::memory_order_acquire)) {
         buffer.readInto(snapshot);
-        require(snapshot[0] >= lastSeen, "TripleBuffer must not rotate an older published frame back to reader");
-        require(snapshot[0] == snapshot[1], "TripleBuffer monotonic test must still observe whole frames");
+        require(snapshot[0] >= lastSeen, "SnapshotBuffer must not rotate an older published frame back to reader");
+        require(snapshot[0] == snapshot[1], "SnapshotBuffer monotonic test must still observe whole frames");
         lastSeen = snapshot[0];
     }
     producer.join();
+}
+
+void testEthercatCommandWatchdogDisablesExpiredTargets() {
+    RmdCanSdk::EthercatPackedTargetFrame frame;
+    auto const now = RmdCanSdk::RealtimeClock::now();
+    frame.timestamp = now - std::chrono::milliseconds(150);
+    frame.motorCount = 3;
+    frame.valid.set(0);
+    frame.valid.set(2);
+    frame.targets[0].enabled = 1;
+    frame.targets[1].enabled = 1;
+    frame.targets[2].enabled = 1;
+
+    int const cleared = RmdCanSdk::applyEthercatCommandWatchdog(frame, now, std::chrono::milliseconds(100));
+    require(cleared == 2, "EtherCAT command watchdog clears every expired valid target");
+    require(frame.targets[0].enabled == 0, "watchdog disables expired valid target 0");
+    require(frame.targets[1].enabled == 1, "watchdog ignores invalid targets");
+    require(frame.targets[2].enabled == 0, "watchdog disables expired valid target 2");
+
+    frame.timestamp = now;
+    frame.targets[0].enabled = 1;
+    frame.targets[2].enabled = 1;
+    require(RmdCanSdk::applyEthercatCommandWatchdog(frame, now, std::chrono::milliseconds(100)) == 0,
+            "EtherCAT command watchdog preserves fresh targets");
+    require(frame.targets[0].enabled == 1 && frame.targets[2].enabled == 1,
+            "fresh EtherCAT targets remain enabled");
+}
+
+void testDriverSdkAcceptsEthercatCpuConfiguration() {
+    DriverSDK::DriverSDK& sdk = DriverSDK::DriverSDK::instance();
+    require(sdk.setCPUs({2}, "ECAT") == 0, "setCPUs accepts ECAT bus spelling");
+    require(sdk.setCPUs({3}, "EtherCAT") == 0, "setCPUs accepts EtherCAT bus spelling");
+    require(sdk.setCPUs({}, "ECAT") == -1, "setCPUs rejects empty EtherCAT CPU list");
 }
 
 void testPublicApiCompiles() {
@@ -1302,6 +1515,7 @@ int main() {
     testSafetySupervisorClampsTargetsAndMarksStaleActuals();
     testMotorBackendInterface();
     testAtomicBackendStatusPublishesDeterministicMetrics();
+    testProcessLockRejectsSecondOwner();
     testRmdCanBackendConstructsWithoutOpeningSocket();
     testEthercatPdoCodecParsesPackedTxData();
     testEthercatPdoCodecPacksHeimaRxData();
@@ -1319,8 +1533,15 @@ int main() {
     testMitSineTargetsStayInsideConfiguredPositionLimits();
     testFrameBufferSnapshotsAreWholeFrames();
     testFrameBufferSequenceNeverMovesBackward();
-    testTripleBufferSnapshotsAreWholeFrames();
-    testTripleBufferSequenceNeverMovesBackward();
+    testSnapshotBufferSnapshotsAreWholeFrames();
+    testSnapshotBufferSequenceNeverMovesBackward();
+    testEthercatCommandWatchdogDisablesExpiredTargets();
+    testDriverSdkAcceptsEthercatCpuConfiguration();
+    testLegKinematicsKneeMatchesVisualizer();
+    testLegKinematicsAnkleMatchesVisualizer();
+    testLegKinematicsKneeGridRoundTripsAndStaysContinuous();
+    testLegKinematicsAnklePitchGridRoundTripsAndStaysContinuous();
+    testLegJointPathInterpolatesAndValidatesWaypoints();
     testPublicApiCompiles();
     testUnsupportedCompatibilityApisReturnExplicitUnsupported();
     std::cout << "rmd_can_sdk_tests passed\n";

@@ -3,6 +3,7 @@
 #include "rmd_can_sdk/rmd_ethercat_bindings.h"
 #include "rmd_can_sdk/rmd_ethercat_mt_device.h"
 #include "rmd_can_sdk/rmd_ethercat_snapshot.h"
+#include "rmd_can_sdk/rmd_process_lock.h"
 #include "rmd_can_sdk/rmd_safety.h"
 
 #include <ecrt.h>
@@ -23,6 +24,7 @@
 #include <map>
 #include <pthread.h>
 #include <sched.h>
+#include <string>
 #include <thread>
 #include <utility>
 #include <unistd.h>
@@ -75,6 +77,9 @@ public:
     ec_master_t* master = nullptr;
     int masterOrder = 0;
     int masterFd = -1;
+    ProcessLock masterLock;
+    bool dcEnabled = false;
+    bool dcReferenceSelected = false;
     unsigned int slaveCount = 0;
     std::vector<EthercatDomainRuntime> domains;
     int lastSlavesResponding = -1;
@@ -94,6 +99,7 @@ int failStart(RmdEthercatRuntime* rt) {
         close(rt->masterFd);
         rt->masterFd = -1;
     }
+    rt->masterLock.release();
     rt->domains.clear();
     return -1;
 }
@@ -134,6 +140,12 @@ void sleepUntil(timespec const& wakeup) {
     }
 }
 
+std::uint64_t elapsedNsAfter(timespec const& planned, timespec const& actual) {
+    std::uint64_t const plannedNs = timespecToNs(planned);
+    std::uint64_t const actualNs = timespecToNs(actual);
+    return actualNs > plannedNs ? actualNs - plannedNs : 0;
+}
+
 bool requestSlaveState(int masterFd, int slave, unsigned char state) {
     EcIoctlSlaveState data{};
     data.slave_position = static_cast<unsigned short>(slave);
@@ -156,6 +168,85 @@ int envInt(char const* name, int fallback) {
         return fallback;
     }
     return static_cast<int>(parsed);
+}
+
+RealtimeClock::duration commandTimeout() {
+    static RealtimeClock::duration const timeout = [] {
+        int const timeoutMs = envInt("RMD_ECAT_COMMAND_TIMEOUT_MS", 100);
+        if (timeoutMs <= 0) {
+            return RealtimeClock::duration::zero();
+        }
+        return std::chrono::duration_cast<RealtimeClock::duration>(std::chrono::milliseconds(timeoutMs));
+    }();
+    return timeout;
+}
+
+RealtimeClock::duration startupReadyTimeout() {
+    static RealtimeClock::duration const timeout = [] {
+        int const timeoutMs = envInt("RMD_ECAT_START_READY_TIMEOUT_MS", 30000);
+        if (timeoutMs <= 0) {
+            return RealtimeClock::duration::zero();
+        }
+        return std::chrono::duration_cast<RealtimeClock::duration>(std::chrono::milliseconds(timeoutMs));
+    }();
+    return timeout;
+}
+
+int startupReadyFrames() {
+    static int const frames = [] {
+        int const configured = envInt("RMD_ECAT_START_READY_FRAMES", 20);
+        return configured > 0 ? configured : 20;
+    }();
+    return frames;
+}
+
+bool ethercatDcEnabled(Config const& config) {
+    return config.ethercatDc && envInt("RMD_ECAT_DISABLE_DC", 0) == 0;
+}
+
+bool frameReadyForBindings(MotorActualFrame const& frame, std::vector<EthercatPdoBinding> const& bindings) {
+    for (EthercatPdoBinding const& binding : bindings) {
+        if (binding.globalIndex >= MaxRealtimeMotors) {
+            continue;
+        }
+        MotorActual const& actual = frame.actuals[binding.globalIndex];
+        if (!frame.valid.test(binding.globalIndex) || frame.stale.test(binding.globalIndex) ||
+            actual.statusWord == 0xffff || actual.errorCode != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool shouldTryTmpLockFallback(int err) {
+    return err == EACCES || err == ENOENT || err == EROFS;
+}
+
+bool acquireEthercatProcessLock(RmdEthercatRuntime* rt) {
+    std::string const primary = "/var/lock/rmd_can_sdk_ethercat" + std::to_string(rt->masterOrder) + ".lock";
+    if (rt->masterLock.acquire(primary)) {
+        return true;
+    }
+    int const primaryError = rt->masterLock.lastError();
+    if (!shouldTryTmpLockFallback(primaryError)) {
+        std::fprintf(stderr,
+                     "acquiring EtherCAT process lock %s failed: errno=%d\n",
+                     primary.c_str(),
+                     primaryError);
+        return false;
+    }
+
+    std::string const fallback = "/tmp/rmd_can_sdk_ethercat" + std::to_string(rt->masterOrder) + ".lock";
+    if (rt->masterLock.acquire(fallback)) {
+        return true;
+    }
+    std::fprintf(stderr,
+                 "acquiring EtherCAT process lock failed: primary=%s errno=%d fallback=%s errno=%d\n",
+                 primary.c_str(),
+                 primaryError,
+                 fallback.c_str(),
+                 rt->masterLock.lastError());
+    return false;
 }
 
 int lastOnlineCpu() {
@@ -220,6 +311,30 @@ void requestSlaveRangeState(int masterFd, unsigned int slaveCount, unsigned char
     }
 }
 
+bool requestSlaveStateBestEffort(int masterFd, unsigned int slave, unsigned char state) {
+    constexpr int Attempts = 3;
+    for (int attempt = 0; attempt < Attempts; ++attempt) {
+        if (requestSlaveState(masterFd, static_cast<int>(slave), state)) {
+            return true;
+        }
+        if (attempt + 1 < Attempts) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    return false;
+}
+
+void requestSlaveRangeStateBestEffort(int masterFd, unsigned int slaveCount, unsigned char state) {
+    for (unsigned int slave = 0; slave < slaveCount; ++slave) {
+        if (!requestSlaveStateBestEffort(masterFd, slave, state)) {
+            std::fprintf(stderr,
+                         "warning: EtherCAT slave %u did not enter state 0x%02x during stop cleanup\n",
+                         slave,
+                         state);
+        }
+    }
+}
+
 void requestAllSlavesState(RmdEthercatRuntime* rt, unsigned char state) {
     if (rt->masterFd < 0) {
         return;
@@ -241,6 +356,53 @@ void requestAllSlavesState(RmdEthercatRuntime* rt, unsigned char state) {
             }
         }
     }
+}
+
+bool waitForStartupReady(RmdEthercatRuntime* rt, std::vector<EthercatPdoBinding> const& bindings) {
+    RealtimeClock::duration const timeout = startupReadyTimeout();
+    if (timeout == RealtimeClock::duration::zero()) {
+        return true;
+    }
+
+    auto const deadline = RealtimeClock::now() + timeout;
+    int consecutiveReady = 0;
+    std::uint64_t lastSequence = 0;
+    MotorActualFrame frame;
+    while (RealtimeClock::now() < deadline) {
+        rt->actualBuffer.readInto(frame);
+        if (frame.sequence != lastSequence) {
+            lastSequence = frame.sequence;
+            if (frameReadyForBindings(frame, bindings)) {
+                ++consecutiveReady;
+                if (consecutiveReady >= startupReadyFrames()) {
+                    return true;
+                }
+            } else {
+                consecutiveReady = 0;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    std::fprintf(stderr,
+                 "EtherCAT startup feedback not ready after %lld ms; consecutiveReady=%d required=%d\n",
+                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count()),
+                 consecutiveReady,
+                 startupReadyFrames());
+    return false;
+}
+
+bool waitForAlStatesClear(RmdEthercatRuntime* rt, unsigned int mask, std::chrono::milliseconds timeout) {
+    auto const deadline = RealtimeClock::now() + timeout;
+    while (RealtimeClock::now() < deadline) {
+        ec_master_state_t masterState{};
+        if (rt->master != nullptr && ecrt_master_state(rt->master, &masterState) == 0 &&
+            masterState.al_states != 0 && (masterState.al_states & mask) == 0) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return false;
 }
 
 bool downloadSdo(ec_master_t* master,
@@ -320,13 +482,22 @@ bool configureMtDevicePdos(RmdEthercatRuntime* rt,
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
-    if (!remapMtDevicePdos(rt->master, slave, spec, rxSpec, txSpec)) {
-        return false;
+    if (envInt("RMD_ECAT_FORCE_MANUAL_PDO_REMAP", 0) != 0) {
+        if (!remapMtDevicePdos(rt->master, slave, spec, rxSpec, txSpec)) {
+            return false;
+        }
     }
 
     ec_slave_config_t* slaveConfig = ecrt_master_slave_config(rt->master, 0, slave, spec.vendorId, spec.productCode);
     if (slaveConfig == nullptr) {
         return false;
+    }
+    if (rt->dcEnabled && !rt->dcReferenceSelected) {
+        if (ecrt_master_select_reference_clock(rt->master, slaveConfig) < 0) {
+            std::fprintf(stderr, "selecting EtherCAT DC reference clock slave %d failed\n", slave);
+            return false;
+        }
+        rt->dcReferenceSelected = true;
     }
 
     std::vector<ec_pdo_entry_info_t> entries;
@@ -355,9 +526,9 @@ bool configureMtDevicePdos(RmdEthercatRuntime* rt,
         return false;
     }
 
-    if (rt->config.ethercatDc) {
+    if (rt->dcEnabled) {
         long const sync0Cycle = periodNs(rt->config) * domain.division;
-        ecrt_slave_config_dc(slaveConfig, 0x0300, sync0Cycle, sync0Cycle / 2, 0, 0);
+        ecrt_slave_config_dc(slaveConfig, 0x0300, sync0Cycle, 0, 0, 0);
     }
 
     unsigned int bitPosition = 0;
@@ -404,6 +575,9 @@ void realtimeLoop(RmdEthercatRuntime* rt) {
     while (!rt->stop.load(std::memory_order_acquire)) {
         addNs(wakeup, cycleNs);
         sleepUntil(wakeup);
+        timespec actualWakeup{};
+        clock_gettime(CLOCK_MONOTONIC, &actualWakeup);
+        std::uint64_t const wakeupLatencyNs = elapsedNsAfter(wakeup, actualWakeup);
         auto const started = std::chrono::steady_clock::now();
 
         ecrt_master_receive(rt->master);
@@ -464,7 +638,7 @@ void realtimeLoop(RmdEthercatRuntime* rt) {
             }
         }
 
-        if (rt->config.ethercatDc) {
+        if (rt->dcEnabled) {
             timespec currentTime{};
             clock_gettime(CLOCK_MONOTONIC, &currentTime);
             std::uint64_t const appTime = timespecToNs(currentTime);
@@ -474,6 +648,11 @@ void realtimeLoop(RmdEthercatRuntime* rt) {
         }
 
         rt->targetBuffer.readInto(rt->targets);
+        int const watchdogCleared =
+            applyEthercatCommandWatchdog(rt->targets, RealtimeClock::now(), commandTimeout());
+        if (watchdogCleared > 0) {
+            rt->status.recordStaleFrame();
+        }
         for (EthercatDomainRuntime& domain : rt->domains) {
             writeEthercatDomainSnapshot(domain.data, domain.size, domain.bindings, rt->targets, rt->workingActuals);
             ecrt_domain_queue(domain.domain);
@@ -484,7 +663,8 @@ void realtimeLoop(RmdEthercatRuntime* rt) {
 
         auto const finished = std::chrono::steady_clock::now();
         auto const elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(finished - started);
-        rt->status.recordCycle(static_cast<std::uint64_t>(elapsed.count()), static_cast<std::uint64_t>(cycleNs));
+        rt->status.recordCycle(
+            static_cast<std::uint64_t>(elapsed.count()), static_cast<std::uint64_t>(cycleNs), wakeupLatencyNs);
     }
 }
 
@@ -509,6 +689,11 @@ int RmdEthercatBackend::start() {
     std::vector<EthercatPdoBinding> bindings = buildEthercatPdoBindings(runtime_->registry, runtime_->backendIndex);
     assignEthercatPdoProfiles(bindings, runtime_->operatingModes);
     runtime_->masterOrder = backend.master;
+    runtime_->dcEnabled = ethercatDcEnabled(runtime_->config);
+    runtime_->dcReferenceSelected = false;
+    if (!acquireEthercatProcessLock(runtime_)) {
+        return failStart(runtime_);
+    }
     runtime_->master = ecrt_request_master(backend.master);
     if (runtime_->master == nullptr) {
         return failStart(runtime_);
@@ -550,6 +735,12 @@ int RmdEthercatBackend::start() {
         }
     }
 
+    if (runtime_->dcEnabled) {
+        timespec currentTime{};
+        clock_gettime(CLOCK_MONOTONIC, &currentTime);
+        ecrt_master_application_time(runtime_->master, timespecToNs(currentTime));
+    }
+
     if (ecrt_master_activate(runtime_->master) != 0) {
         return failStart(runtime_);
     }
@@ -567,7 +758,23 @@ int RmdEthercatBackend::start() {
     runtime_->stop.store(false, std::memory_order_release);
     runtime_->status.setRunning(true);
     runtime_->thread = std::thread(realtimeLoop, runtime_);
+    if (runtime_->dcEnabled) {
+        std::this_thread::sleep_for(std::chrono::nanoseconds(periodNs(runtime_->config) * 5));
+    }
     requestAllSlavesState(runtime_, 0x08);
+    if (!waitForStartupReady(runtime_, bindings)) {
+        if (runtime_->masterFd >= 0 && runtime_->slaveCount > 0) {
+            requestSlaveRangeStateBestEffort(runtime_->masterFd, runtime_->slaveCount, 0x04);
+            waitForAlStatesClear(runtime_, 0x08, std::chrono::milliseconds(3000));
+            requestSlaveRangeStateBestEffort(runtime_->masterFd, runtime_->slaveCount, 0x02);
+            waitForAlStatesClear(runtime_, 0x0c, std::chrono::milliseconds(3000));
+        }
+        runtime_->stop.store(true, std::memory_order_release);
+        if (runtime_->thread.joinable()) {
+            runtime_->thread.join();
+        }
+        return failStart(runtime_);
+    }
     return 0;
 }
 
@@ -575,30 +782,36 @@ void RmdEthercatBackend::stop() {
     if (runtime_ == nullptr) {
         return;
     }
+    bool const threadWasRunning = runtime_->thread.joinable();
+    if (threadWasRunning && runtime_->masterFd >= 0 && runtime_->slaveCount > 0) {
+        requestSlaveRangeStateBestEffort(runtime_->masterFd, runtime_->slaveCount, 0x04);
+        if (!waitForAlStatesClear(runtime_, 0x08, std::chrono::milliseconds(3000))) {
+            std::fprintf(stderr, "warning: EtherCAT slaves still report OP while stopping\n");
+        }
+        requestSlaveRangeStateBestEffort(runtime_->masterFd, runtime_->slaveCount, 0x02);
+        if (!waitForAlStatesClear(runtime_, 0x0c, std::chrono::milliseconds(3000))) {
+            std::fprintf(stderr, "warning: EtherCAT slaves still report SAFEOP/OP while stopping\n");
+        }
+    }
     runtime_->stop.store(true, std::memory_order_release);
     if (runtime_->thread.joinable()) {
         runtime_->thread.join();
     }
-    if (runtime_->masterFd >= 0 && runtime_->slaveCount > 0) {
-        requestSlaveRangeState(runtime_->masterFd, runtime_->slaveCount, 0x01);
+    if (!threadWasRunning && runtime_->masterFd >= 0 && runtime_->slaveCount > 0) {
+        requestSlaveRangeStateBestEffort(runtime_->masterFd, runtime_->slaveCount, 0x01);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        requestSlaveRangeState(runtime_->masterFd, runtime_->slaveCount, 0x02);
+        requestSlaveRangeStateBestEffort(runtime_->masterFd, runtime_->slaveCount, 0x02);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
     if (runtime_->master != nullptr) {
         ecrt_release_master(runtime_->master);
         runtime_->master = nullptr;
     }
-    if (runtime_->masterFd >= 0 && runtime_->slaveCount > 0) {
-        requestSlaveRangeState(runtime_->masterFd, runtime_->slaveCount, 0x01);
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        requestSlaveRangeState(runtime_->masterFd, runtime_->slaveCount, 0x02);
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
     if (runtime_->masterFd >= 0) {
         close(runtime_->masterFd);
         runtime_->masterFd = -1;
     }
+    runtime_->masterLock.release();
     runtime_->domains.clear();
     runtime_->status.setRunning(false);
 }

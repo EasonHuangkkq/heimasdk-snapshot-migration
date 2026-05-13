@@ -26,4 +26,8 @@ EthercatPackedTarget packEthercatTargetForRealtime(MotorTarget const& target,
                                                    MotorParameters const& params,
                                                    EthercatMtDeviceRxProfile rxProfile);
 
+int applyEthercatCommandWatchdog(EthercatPackedTargetFrame& frame,
+                                 RealtimeClock::time_point now,
+                                 RealtimeClock::duration timeout);
+
 } // namespace RmdCanSdk

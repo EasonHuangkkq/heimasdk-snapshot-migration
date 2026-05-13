@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Config>
+    <ECAT>
+        <Devices>
+            <Device type="MT_Device">
+                <VendorID>0x00202008</VendorID>
+                <ProductCode>0x00000000</ProductCode>
+                <RxPDOs index="0x1601">
+                    <Object>Controlword</Object>
+                    <Object>TargetPosition</Object>
+                    <Object>TargetVelocity</Object>
+                    <Object>TargetTorque</Object>
+                    <Object>PvtKp</Object>
+                    <Object>PvtKd</Object>
+                    <Object>Mode</Object>
+                    <Object>RxPDOPadding</Object>
+                </RxPDOs>
+                <TxPDOs index="0x1a02">
+                    <Object>StatusWord</Object>
+                    <Object>ActualPosition</Object>
+                    <Object>ActualVelocity</Object>
+                    <Object>ActualTorque</Object>
+                    <Object>ErrorCode</Object>
+                    <Object>MotorTemperature</Object>
+                    <Object>DriveTemperature</Object>
+                    <Object>Voltage</Object>
+                    <Object>ModeDisplay</Object>
+                    <Object>TxPDOPadding</Object>
+                </TxPDOs>
+                <Dictionary>
+                    <Object index="0x0000" subindex="0x00" signed="0" bit_length="0" operation="1">Alias</Object>
+                    <Object index="0x607a" subindex="0x00" signed="1" bit_length="32" operation="0">TargetPosition</Object>
+                    <Object index="0x60ff" subindex="0x00" signed="1" bit_length="32" operation="0">TargetVelocity</Object>
+                    <Object index="0x6071" subindex="0x00" signed="1" bit_length="16" operation="0">TargetTorque</Object>
+                    <Object index="0x6040" subindex="0x00" signed="0" bit_length="16" operation="0">Controlword</Object>
+                    <Object index="0x2000" subindex="0x00" signed="1" bit_length="32" operation="0">PvtKp</Object>
+                    <Object index="0x2001" subindex="0x00" signed="1" bit_length="32" operation="0">PvtKd</Object>
+                    <Object index="0x6060" subindex="0x00" signed="1" bit_length="8" operation="0">Mode</Object>
+                    <Object index="0x2ffd" subindex="0x00" signed="0" bit_length="8" operation="0">RxPDOPadding</Object>
+                    <Object index="0x6064" subindex="0x00" signed="1" bit_length="32" operation="1">ActualPosition</Object>
+                    <Object index="0x606c" subindex="0x00" signed="1" bit_length="32" operation="1">ActualVelocity</Object>
+                    <Object index="0x6077" subindex="0x00" signed="1" bit_length="16" operation="1">ActualTorque</Object>
+                    <Object index="0x6041" subindex="0x00" signed="0" bit_length="16" operation="1">StatusWord</Object>
+                    <Object index="0x603f" subindex="0x00" signed="0" bit_length="16" operation="1">ErrorCode</Object>
+                    <Object index="0x6061" subindex="0x00" signed="1" bit_length="8" operation="1">ModeDisplay</Object>
+                    <Object index="0x2ffe" subindex="0x00" signed="0" bit_length="8" operation="1">TxPDOPadding</Object>
+                    <Object index="0x2009" subindex="0x00" signed="1" bit_length="16" operation="1">MotorTemperature</Object>
+                    <Object index="0x200c" subindex="0x00" signed="1" bit_length="16" operation="1">DriveTemperature</Object>
+                    <Object index="0x200a" subindex="0x00" signed="0" bit_length="16" operation="1">Voltage</Object>
+                </Dictionary>
+            </Device>
+        </Devices>
+        <Masters>
+            <Master order="0" dc="true" period="1000000"/>
+        </Masters>
+        <Domains>
+            <Domain master="0" order="0" division="1"/>
+        </Domains>
+        <Slaves>
+            <Slave master="0" domain="0" slave="1" alias="1" type="MT_Device">1</Slave>
+        </Slaves>
+    </ECAT>
+    <Motors>
+        <Motor limb="0" motor="0" alias="1">
+            <Polarity>-1</Polarity>
+            <CountBias>0</CountBias>
+            <EncoderResolution>131072</EncoderResolution>
+            <GearRatioTor>20</GearRatioTor>
+            <GearRatioPosVel>20</GearRatioPosVel>
+            <RatedCurrent>42.42</RatedCurrent>
+            <TorqueConstant>2.81</TorqueConstant>
+            <RatedTorque>85</RatedTorque>
+            <MaximumTorque>320</MaximumTorque>
+            <MinimumPosition>-0.18</MinimumPosition>
+            <MaximumPosition>0.18</MaximumPosition>
+        </Motor>
+    </Motors>
+</Config>

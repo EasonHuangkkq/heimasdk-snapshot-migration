@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>膝盖曲柄连杆 3D 可视化</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    color: #f4f1ea;
+    background: #171714;
+  }
+  button, input { font: inherit; }
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    height: 100vh;
+  }
+  .stage {
+    position: relative;
+    min-width: 0;
+    background: #191a17;
+  }
+  #view {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .hud {
+    position: absolute;
+    top: 18px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(18,18,15,.76);
+    backdrop-filter: blur(14px);
+  }
+  .hud-title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .hud-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: #9fe3d3;
+    white-space: nowrap;
+  }
+  .legend {
+    position: absolute;
+    left: 20px;
+    bottom: 20px;
+    display: grid;
+    gap: 7px;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(18,18,15,.76);
+    backdrop-filter: blur(14px);
+    font-size: 12px;
+    color: #cbc4b5;
+  }
+  .legend-row {
+    display: grid;
+    grid-template-columns: 12px auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .label {
+    position: absolute;
+    transform: translate(-50%, -140%);
+    padding: 3px 7px;
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(14,14,12,.82);
+    color: #f6f0df;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .panel {
+    border-left: 1px solid rgba(255,255,255,.12);
+    background: #202019;
+    overflow: auto;
+    padding: 18px;
+  }
+  .panel h1 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    letter-spacing: 0;
+  }
+  .panel p {
+    margin: 0 0 18px;
+    color: #b7b0a2;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .group {
+    border-top: 1px solid rgba(255,255,255,.1);
+    padding: 16px 0;
+  }
+  .group h2 {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: #f0c768;
+  }
+  .control {
+    margin: 0 0 13px;
+  }
+  .control label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+    color: #ded7c8;
+    font-size: 12px;
+  }
+  .control output {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #9fe3d3;
+    white-space: nowrap;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #e9b44c;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #ded7c8;
+    font-size: 12px;
+  }
+  .toggle input { accent-color: #e9b44c; }
+  .buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    margin-top: 12px;
+  }
+  .icon-btn {
+    height: 34px;
+    border: 1px solid rgba(255,255,255,.14);
+    color: #f4f1ea;
+    background: #2b2b23;
+    cursor: pointer;
+  }
+  .icon-btn:hover { background: #343429; }
+  .readout {
+    display: grid;
+    gap: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+  .readout-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: #cfc7b8;
+  }
+  .readout-row strong {
+    color: #f4f1ea;
+    font-weight: 600;
+  }
+  .formula {
+    margin-top: 10px;
+    padding: 10px;
+    background: #171714;
+    color: #cbc4b5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    border: 1px solid rgba(255,255,255,.08);
+    overflow-x: auto;
+  }
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 1fr 390px; }
+    .panel { border-left: 0; border-top: 1px solid rgba(255,255,255,.12); }
+    .hud { right: 18px; flex-wrap: wrap; }
+  }
+</style>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="view"></canvas>
+    <div class="hud">
+      <div class="hud-title">膝盖曲柄连杆</div>
+      <div class="hud-value" id="hudStatus">rod error 0.000 mm</div>
+    </div>
+    <div class="label" id="labelO">O 膝盖轴</div>
+    <div class="label" id="labelM">M 电机轴</div>
+    <div class="label" id="labelE">E 曲轴端</div>
+    <div class="label" id="labelK">K 小腿端</div>
+    <div class="label" id="labelS">小腿</div>
+    <div class="legend">
+      <div class="legend-row"><span class="swatch" style="background:#ef5d50"></span><span>O: 膝盖转轴中心，坐标原点</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#f0c768"></span><span>M-E: 曲轴半径 r = 50 mm</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#58c4dd"></span><span>E-K: 长连杆 L = 215 mm</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#77d17a"></span><span>O-K: 膝盖输出小摇臂 a = 50 mm</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#d9d1bd"></span><span>小腿: q_rel = 0 时为直立机械零位</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#a7a28f"></span><span>M: 电机轴坐标，需要按实物测量输入</span></div>
+    </div>
+  </main>
+  <aside class="panel">
+    <h1>3D 几何标定视图</h1>
+    <p>这个图按侧视机构建模：小腿直立是机械零位。界面显示相对零位角，内部用绝对几何角计算曲轴端 E 和小摇臂端 K。</p>
+
+    <section class="group">
+      <h2>运动角度</h2>
+      <div class="control">
+        <label for="kneeAngle">膝盖相对角 q_rel <output id="kneeAngleOut"></output></label>
+        <input id="kneeAngle" type="range" min="-72" max="45" value="0" step="0.1">
+      </div>
+      <div class="control">
+        <label for="motorAngle">电机相对角 motor_rel <output id="motorAngleOut"></output></label>
+        <input id="motorAngle" type="range" min="-180" max="180" value="0" step="0.1">
+      </div>
+      <label class="toggle"><input id="lockRod" type="checkbox" checked> 锁定 215 mm 连杆长度，自动反求 motor_rel</label>
+      <div class="buttons">
+        <button class="icon-btn" id="resetBtn" title="复位角度">复位</button>
+        <button class="icon-btn" id="animateBtn" title="切换动画">动画</button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>零位参数</h2>
+      <div class="control">
+        <label for="thetaZero">theta_zero <output id="thetaZeroOut"></output></label>
+        <input id="thetaZero" type="range" min="-90" max="90" value="8.4" step="0.1">
+      </div>
+      <div class="control">
+        <label for="betaZero">beta_zero <output id="betaZeroOut"></output></label>
+        <input id="betaZero" type="range" min="-90" max="120" value="61.2" step="0.1">
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>几何尺寸</h2>
+      <div class="control">
+        <label for="crankRadius">曲轴半径 r <output id="crankRadiusOut"></output></label>
+        <input id="crankRadius" type="range" min="20" max="90" value="50" step="1">
+      </div>
+      <div class="control">
+        <label for="rodLength">连杆长度 L <output id="rodLengthOut"></output></label>
+        <input id="rodLength" type="range" min="120" max="320" value="215" step="1">
+      </div>
+      <div class="control">
+        <label for="kneeArm">O-K 小摇臂 a <output id="kneeArmOut"></output></label>
+        <input id="kneeArm" type="range" min="10" max="90" value="50" step="1">
+      </div>
+      <div class="control">
+        <label for="shankLength">小腿显示长度 <output id="shankLengthOut"></output></label>
+        <input id="shankLength" type="range" min="120" max="520" value="405" step="5">
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>电机轴位置</h2>
+      <div class="control">
+        <label for="motorX">M_x <output id="motorXOut"></output></label>
+        <input id="motorX" type="range" min="-120" max="120" value="0.0" step="0.1">
+      </div>
+      <div class="control">
+        <label for="motorZ">M_z <output id="motorZOut"></output></label>
+        <input id="motorZ" type="range" min="80" max="320" value="250.0" step="0.1">
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>当前坐标</h2>
+      <div class="readout">
+        <div class="readout-row"><span>O</span><strong id="readO"></strong></div>
+        <div class="readout-row"><span>M</span><strong id="readM"></strong></div>
+        <div class="readout-row"><span>theta_abs</span><strong id="readThetaAbs"></strong></div>
+        <div class="readout-row"><span>beta_abs</span><strong id="readBetaAbs"></strong></div>
+        <div class="readout-row"><span>E(theta_abs)</span><strong id="readE"></strong></div>
+        <div class="readout-row"><span>K(q_rel)</span><strong id="readK"></strong></div>
+        <div class="readout-row"><span>S 小腿末端</span><strong id="readShankEnd"></strong></div>
+        <div class="readout-row"><span>S 水平位移 Δx</span><strong id="readShankDx"></strong></div>
+        <div class="readout-row"><span>|E-K|</span><strong id="readRod"></strong></div>
+      </div>
+      <div class="formula">
+        motor_rel = theta_abs - theta_zero<br>
+        q_rel = beta_abs - beta_zero<br>
+        E = M + r [cos theta_abs, sin theta_abs]<br>
+        K = a [cos beta_abs, sin beta_abs]<br>
+        constraint: |E - K| = L
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const canvas = $("view");
+const stage = $("stage");
+const labels = {
+  O: $("labelO"),
+  M: $("labelM"),
+  E: $("labelE"),
+  K: $("labelK"),
+  S: $("labelS")
+};
+
+const controls = {
+  kneeAngle: $("kneeAngle"),
+  motorAngle: $("motorAngle"),
+  lockRod: $("lockRod"),
+  thetaZero: $("thetaZero"),
+  betaZero: $("betaZero"),
+  crankRadius: $("crankRadius"),
+  rodLength: $("rodLength"),
+  kneeArm: $("kneeArm"),
+  shankLength: $("shankLength"),
+  motorX: $("motorX"),
+  motorZ: $("motorZ")
+};
+
+let state = {
+  yaw: -0.48,
+  pitch: 0.42,
+  distance: 640,
+  dragging: false,
+  lastX: 0,
+  lastY: 0,
+  animating: false,
+  lastT: 0,
+  motorRelGuess: deg(Number(controls.motorAngle.value))
+};
+
+function deg(v) { return v * Math.PI / 180; }
+function rad(v) { return v * 180 / Math.PI; }
+function fmt(v) { return `${v.toFixed(1)} mm`; }
+function pointFmt(p) { return `[${p.x.toFixed(1)}, ${p.z.toFixed(1)}]`; }
+
+function values() {
+  return {
+    qRel: deg(Number(controls.kneeAngle.value)),
+    motorRel: deg(Number(controls.motorAngle.value)),
+    thetaZero: deg(Number(controls.thetaZero.value)),
+    betaZero: deg(Number(controls.betaZero.value)),
+    r: Number(controls.crankRadius.value),
+    L: Number(controls.rodLength.value),
+    Rok: Number(controls.kneeArm.value),
+    shankLength: Number(controls.shankLength.value),
+    mx: Number(controls.motorX.value),
+    mz: Number(controls.motorZ.value)
+  };
+}
+
+function pointFromAngle(length, angle) {
+  return { x: length * Math.cos(angle), z: length * Math.sin(angle) };
+}
+
+function rotateAroundO(point, angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: c * point.x - s * point.z, z: s * point.x + c * point.z };
+}
+
+function computeGeometry(motorRelOverride = null) {
+  const v = values();
+  const motorRel = motorRelOverride ?? v.motorRel;
+  const thetaAbs = v.thetaZero + motorRel;
+  const betaAbs = v.betaZero + v.qRel;
+  const O = { x: 0, z: 0 };
+  const M = { x: v.mx, z: v.mz };
+  const E = { x: M.x + v.r * Math.cos(thetaAbs), z: M.z + v.r * Math.sin(thetaAbs) };
+  const K = pointFromAngle(v.Rok, betaAbs);
+  const shankDir = rotateAroundO({ x: 0, z: -1 }, v.qRel);
+  const shankEnd = { x: shankDir.x * v.shankLength, z: shankDir.z * v.shankLength };
+  const shankZeroEnd = { x: 0, z: -v.shankLength };
+  const shankDx = shankEnd.x - shankZeroEnd.x;
+  const rod = Math.hypot(E.x - K.x, E.z - K.z);
+  return { ...v, motorRel, thetaAbs, betaAbs, O, M, E, K, shankEnd, shankZeroEnd, shankDx, rod, error: rod - v.L };
+}
+
+function solveThetaForRod() {
+  const v = values();
+  const base = computeGeometry(0);
+  const dx = base.K.x - base.M.x;
+  const dz = base.K.z - base.M.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6 || d > v.r + v.L || d < Math.abs(v.r - v.L)) {
+    return v.theta;
+  }
+  const phi = Math.atan2(dz, dx);
+  const cosA = (v.r * v.r + d * d - v.L * v.L) / (2 * v.r * d);
+  const a = Math.acos(Math.max(-1, Math.min(1, cosA)));
+  const candidates = [phi + a - v.thetaZero, phi - a - v.thetaZero];
+  let guess = state.motorRelGuess;
+  let best = candidates[0];
+  let bestDelta = Infinity;
+  for (const c of candidates) {
+    const delta = Math.abs(Math.atan2(Math.sin(c - guess), Math.cos(c - guess)));
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = c;
+    }
+  }
+  state.motorRelGuess = best;
+  return best;
+}
+
+function updateControlText(g) {
+  $("kneeAngleOut").textContent = `${rad(g.qRel).toFixed(1)} deg`;
+  $("motorAngleOut").textContent = `${rad(g.motorRel).toFixed(1)} deg`;
+  $("thetaZeroOut").textContent = `${Number(controls.thetaZero.value).toFixed(1)} deg`;
+  $("betaZeroOut").textContent = `${Number(controls.betaZero.value).toFixed(1)} deg`;
+  $("crankRadiusOut").textContent = fmt(g.r);
+  $("rodLengthOut").textContent = fmt(g.L);
+  $("kneeArmOut").textContent = fmt(g.Rok);
+  $("shankLengthOut").textContent = fmt(g.shankLength);
+  $("motorXOut").textContent = fmt(g.mx);
+  $("motorZOut").textContent = fmt(g.mz);
+  $("readO").textContent = pointFmt(g.O);
+  $("readM").textContent = pointFmt(g.M);
+  $("readThetaAbs").textContent = `${rad(g.thetaAbs).toFixed(1)} deg`;
+  $("readBetaAbs").textContent = `${rad(g.betaAbs).toFixed(1)} deg`;
+  $("readE").textContent = pointFmt(g.E);
+  $("readK").textContent = pointFmt(g.K);
+  $("readShankEnd").textContent = pointFmt(g.shankEnd);
+  $("readShankDx").textContent = `${g.shankDx.toFixed(1)} mm`;
+  $("readRod").textContent = `${g.rod.toFixed(3)} mm`;
+  $("hudStatus").textContent = `rod error ${g.error.toFixed(3)} mm`;
+  if (controls.lockRod.checked) {
+    controls.motorAngle.value = String(rad(g.motorRel).toFixed(1));
+  }
+}
+
+function mechToThree(p, depth = 0) {
+  return window.THREE ? new THREE.Vector3(p.x, p.z, depth) : { x: p.x, y: p.z, z: depth };
+}
+
+function colorForError(err) {
+  return Math.abs(err) < 0.5 ? "#58c4dd" : Math.abs(err) < 5 ? "#f0c768" : "#ef5d50";
+}
+
+let rendererKind = "canvas";
+let threeRuntime = null;
+
+function makeThreeRuntime() {
+  if (!window.THREE) return null;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x191a17);
+  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 2400);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.58));
+  const key = new THREE.DirectionalLight(0xffffff, 1.2);
+  key.position.set(120, 300, 260);
+  scene.add(key);
+
+  const root = new THREE.Group();
+  scene.add(root);
+
+  const mat = {
+    O: new THREE.MeshStandardMaterial({ color: 0xef5d50, roughness: 0.45, metalness: 0.08 }),
+    M: new THREE.MeshStandardMaterial({ color: 0xf0c768, roughness: 0.45, metalness: 0.12 }),
+    E: new THREE.MeshStandardMaterial({ color: 0x58c4dd, roughness: 0.35, metalness: 0.1 }),
+    K: new THREE.MeshStandardMaterial({ color: 0x77d17a, roughness: 0.35, metalness: 0.1 }),
+    rod: new THREE.MeshStandardMaterial({ color: 0x58c4dd, roughness: 0.5, metalness: 0.15 }),
+    arm: new THREE.MeshStandardMaterial({ color: 0x77d17a, roughness: 0.5, metalness: 0.12 }),
+    shank: new THREE.MeshStandardMaterial({ color: 0xd9d1bd, roughness: 0.42, metalness: 0.22 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0xa7a28f, roughness: 0.38, metalness: 0.35 }),
+    axisX: new THREE.LineBasicMaterial({ color: 0xef5d50 }),
+    axisY: new THREE.LineBasicMaterial({ color: 0x58c4dd }),
+    axisZ: new THREE.LineBasicMaterial({ color: 0x77d17a }),
+    grid: new THREE.LineBasicMaterial({ color: 0x444439, transparent: true, opacity: 0.45 })
+  };
+
+  function sphere(colorMat, radius) {
+    return new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 18), colorMat);
+  }
+  function cyl(radius, material) {
+    return new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 1, 24), material);
+  }
+  function setCylinderBetween(mesh, a, b) {
+    const av = mechToThree(a, 0);
+    const bv = mechToThree(b, 0);
+    const mid = av.clone().add(bv).multiplyScalar(0.5);
+    const dir = bv.clone().sub(av);
+    mesh.position.copy(mid);
+    mesh.scale.set(1, dir.length(), 1);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  }
+  function line(points, material) {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.Line(geometry, material);
+  }
+
+  const grid = new THREE.Group();
+  for (let i = -300; i <= 360; i += 40) {
+    grid.add(line([new THREE.Vector3(-260, i, -38), new THREE.Vector3(260, i, -38)], mat.grid));
+    grid.add(line([new THREE.Vector3(i, -80, -38), new THREE.Vector3(i, 360, -38)], mat.grid));
+  }
+  root.add(grid);
+
+  const axes = new THREE.Group();
+  axes.add(line([new THREE.Vector3(-260, 0, 0), new THREE.Vector3(280, 0, 0)], mat.axisX));
+  axes.add(line([new THREE.Vector3(0, 0, -160), new THREE.Vector3(0, 0, 160)], mat.axisY));
+  axes.add(line([new THREE.Vector3(0, -80, 0), new THREE.Vector3(0, 360, 0)], mat.axisZ));
+  root.add(axes);
+
+  const O = sphere(mat.O, 12);
+  const M = sphere(mat.M, 10);
+  const E = sphere(mat.E, 8);
+  const K = sphere(mat.K, 8);
+  const kneeDisk = new THREE.Mesh(new THREE.CylinderGeometry(28, 28, 26, 48), mat.metal);
+  kneeDisk.rotation.x = Math.PI / 2;
+  const motorDisk = new THREE.Mesh(new THREE.CylinderGeometry(35, 35, 30, 48), mat.metal);
+  motorDisk.rotation.x = Math.PI / 2;
+  const crank = cyl(4.8, mat.M);
+  const rod = cyl(4.2, mat.rod);
+  const arm = cyl(6.2, mat.arm);
+  const shank = cyl(10, mat.shank);
+  root.add(kneeDisk, motorDisk, crank, rod, arm, shank, O, M, E, K);
+
+  return { scene, camera, renderer, root, objects: { O, M, E, K, kneeDisk, motorDisk, crank, rod, arm, shank }, mat, setCylinderBetween };
+}
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.floor(r.width * window.devicePixelRatio));
+  canvas.height = Math.max(1, Math.floor(r.height * window.devicePixelRatio));
+  canvas.style.width = `${r.width}px`;
+  canvas.style.height = `${r.height}px`;
+  if (threeRuntime) {
+    threeRuntime.camera.aspect = r.width / r.height;
+    threeRuntime.camera.updateProjectionMatrix();
+    threeRuntime.renderer.setSize(r.width, r.height, false);
+  }
+}
+
+function updateThree(g) {
+  const rt = threeRuntime;
+  const { O, M, E, K, kneeDisk, motorDisk, crank, rod, arm, shank } = rt.objects;
+  O.position.copy(mechToThree(g.O));
+  M.position.copy(mechToThree(g.M));
+  E.position.copy(mechToThree(g.E));
+  K.position.copy(mechToThree(g.K));
+  kneeDisk.position.copy(mechToThree(g.O));
+  motorDisk.position.copy(mechToThree(g.M));
+  rt.setCylinderBetween(crank, g.M, g.E);
+  rt.setCylinderBetween(rod, g.E, g.K);
+  rt.setCylinderBetween(arm, g.O, g.K);
+  rt.setCylinderBetween(shank, g.O, g.shankEnd);
+  rod.material.color.set(colorForError(g.error));
+
+  const target = new THREE.Vector3(10, 120, 0);
+  const cp = Math.cos(state.pitch);
+  const sp = Math.sin(state.pitch);
+  const cy = Math.cos(state.yaw);
+  const sy = Math.sin(state.yaw);
+  rt.camera.position.set(
+    target.x + state.distance * cp * sy,
+    target.y + state.distance * sp,
+    target.z + state.distance * cp * cy
+  );
+  rt.camera.lookAt(target);
+  rt.renderer.render(rt.scene, rt.camera);
+  updateLabels(g, p => projectThree(p, rt));
+}
+
+function projectThree(p, rt) {
+  const v = mechToThree(p);
+  v.project(rt.camera);
+  const rect = stage.getBoundingClientRect();
+  return {
+    x: (v.x * 0.5 + 0.5) * rect.width,
+    y: (-v.y * 0.5 + 0.5) * rect.height
+  };
+}
+
+function updateLabels(g, projector) {
+  for (const key of ["O", "M", "E", "K"]) {
+    const p = projector(g[key]);
+    labels[key].style.left = `${p.x}px`;
+    labels[key].style.top = `${p.y}px`;
+  }
+  const shankLabel = projector(g.shankEnd);
+  labels.S.style.left = `${shankLabel.x}px`;
+  labels.S.style.top = `${shankLabel.y}px`;
+}
+
+function canvasProject(p) {
+  const rect = stage.getBoundingClientRect();
+  const x0 = p.x;
+  const y0 = p.z - 140;
+  const z0 = 0;
+  const cy = Math.cos(state.yaw);
+  const sy = Math.sin(state.yaw);
+  const cp = Math.cos(state.pitch);
+  const sp = Math.sin(state.pitch);
+  const x1 = cy * x0 + sy * z0;
+  const z1 = -sy * x0 + cy * z0;
+  const y1 = cp * y0 - sp * z1;
+  const z2 = sp * y0 + cp * z1 + state.distance;
+  const scale = 560 / Math.max(80, z2);
+  return {
+    x: rect.width / 2 + x1 * scale,
+    y: rect.height / 2 - y1 * scale,
+    scale
+  };
+}
+
+function updateCanvas(g) {
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.scale(dpr, dpr);
+  const rect = stage.getBoundingClientRect();
+
+  ctx.fillStyle = "#191a17";
+  ctx.fillRect(0, 0, rect.width, rect.height);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255,255,255,.08)";
+  for (let x = -260; x <= 280; x += 40) {
+    drawLine({ x, z: -80 }, { x, z: 360 }, "#3e3e34", 1);
+  }
+  for (let z = -80; z <= 360; z += 40) {
+    drawLine({ x: -260, z }, { x: 280, z }, "#3e3e34", 1);
+  }
+  drawLine({ x: -260, z: 0 }, { x: 280, z: 0 }, "#ef5d50", 1.5);
+  drawLine({ x: 0, z: -80 }, { x: 0, z: 360 }, "#77d17a", 1.5);
+  drawLine(g.O, g.shankEnd, "#d9d1bd", 16);
+  drawLine(g.O, g.K, "#77d17a", 9);
+  drawLine(g.E, g.K, colorForError(g.error), 7);
+  drawLine(g.M, g.E, "#f0c768", 8);
+  drawDisk(g.O, 28, "#8c8879");
+  drawDisk(g.M, 35, "#8c8879");
+  drawDisk(g.O, 12, "#ef5d50");
+  drawDisk(g.M, 10, "#f0c768");
+  drawDisk(g.E, 8, "#58c4dd");
+  drawDisk(g.K, 8, "#77d17a");
+  updateLabels(g, canvasProject);
+
+  function drawLine(a, b, color, width) {
+    const pa = canvasProject(a);
+    const pb = canvasProject(b);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+  }
+  function drawDisk(p, r, color) {
+    const pp = canvasProject(p);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pp.x, pp.y, Math.max(3, r * pp.scale * 0.72), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function render(t = 0) {
+  if (state.animating) {
+    const v = Math.sin(t * 0.0012) * 24;
+    controls.kneeAngle.value = v.toFixed(1);
+  }
+  let theta = null;
+  if (controls.lockRod.checked) theta = solveThetaForRod();
+  const g = computeGeometry(theta);
+  updateControlText(g);
+  if (rendererKind === "three") updateThree(g);
+  else updateCanvas(g);
+  requestAnimationFrame(render);
+}
+
+function initRenderer() {
+  threeRuntime = makeThreeRuntime();
+  if (threeRuntime) rendererKind = "three";
+  resize();
+}
+
+function onPointerDown(e) {
+  state.dragging = true;
+  state.lastX = e.clientX;
+  state.lastY = e.clientY;
+  stage.setPointerCapture(e.pointerId);
+}
+function onPointerMove(e) {
+  if (!state.dragging) return;
+  const dx = e.clientX - state.lastX;
+  const dy = e.clientY - state.lastY;
+  state.yaw += dx * 0.006;
+  state.pitch = Math.max(-1.0, Math.min(1.15, state.pitch + dy * 0.004));
+  state.lastX = e.clientX;
+  state.lastY = e.clientY;
+}
+function onPointerUp(e) {
+  state.dragging = false;
+  stage.releasePointerCapture(e.pointerId);
+}
+
+for (const c of Object.values(controls)) {
+  c.addEventListener("input", () => {
+    if (c === controls.motorAngle) {
+      controls.lockRod.checked = false;
+      state.motorRelGuess = deg(Number(controls.motorAngle.value));
+    }
+  });
+}
+
+$("resetBtn").addEventListener("click", () => {
+  controls.kneeAngle.value = "0";
+  controls.motorAngle.value = "0";
+  controls.lockRod.checked = true;
+  state.motorRelGuess = deg(0);
+});
+$("animateBtn").addEventListener("click", () => {
+  state.animating = !state.animating;
+  $("animateBtn").style.background = state.animating ? "#3a3322" : "#2b2b23";
+});
+
+stage.addEventListener("pointerdown", onPointerDown);
+stage.addEventListener("pointermove", onPointerMove);
+stage.addEventListener("pointerup", onPointerUp);
+stage.addEventListener("wheel", e => {
+  e.preventDefault();
+  state.distance = Math.max(260, Math.min(1100, state.distance + e.deltaY * 0.5));
+}, { passive: false });
+window.addEventListener("resize", resize);
+
+initRenderer();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

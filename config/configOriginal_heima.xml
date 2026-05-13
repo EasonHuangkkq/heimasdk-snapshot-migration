@@ -62,7 +62,7 @@
             </Category>
         </Categories>
         <Masters>
-            <!-- Keep the original heimaSDK EtherCAT DC timing path enabled. -->
+            <!-- DC synchronization is required for the target EtherCAT control path. -->
             <Master order="0" dc="true" period="1000000"/>
         </Masters>
         <Domains>
@@ -169,7 +169,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.3</MaximumPosition>
+            <MaximumPosition>0.5</MaximumPosition>
         </Motor>
         <!-- x6 motor -->
         <Motor limb="0" motor="5" alias="6">
@@ -183,7 +183,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.3</MaximumPosition>
+            <MaximumPosition>0.5</MaximumPosition>
         </Motor>
         <!--left leg -->
         <!-- x12 motor -->
@@ -254,7 +254,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.3</MaximumPosition>
+            <MaximumPosition>0.5</MaximumPosition>
         </Motor>
         <!-- x6 motor -->
         <Motor limb="1" motor="5" alias="12">
@@ -268,7 +268,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.3</MaximumPosition>
+            <MaximumPosition>0.5</MaximumPosition>
         </Motor>
         <!-- waist-->
         <Motor limb="4" motor="0" alias="13">
@@ -286,8 +286,8 @@
         </Motor>
     
     </Motors>
-    <!-- IMU is tested separately; keep this EtherCAT snapshot config motor-only. -->
-    <!-- <IMU device="/dev/ttyACM0" baudrate="921600" type="YeSense"/> -->
+    <!-- RS232 YeSense IMU publishes through the independent IMU snapshot buffer. -->
+    <IMU device="/dev/ttyACM0" baudrate="921600" type="YeSense"/>
     <!-- Empty bus stubs to satisfy parser expectations -->
     <RS485>
         <Slaves/>

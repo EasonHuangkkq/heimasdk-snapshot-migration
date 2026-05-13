@@ -26,6 +26,7 @@ using RmdCanSdk::feedbackReady;
 using RmdCanSdk::findParamsForAlias;
 using RmdCanSdk::isActiveMotor;
 using RmdCanSdk::operationEnabled;
+using RmdCanSdk::operationFeedbackReady;
 
 struct PointResult {
     int point = 0;
@@ -333,6 +334,36 @@ int main(int argc, char** argv) {
 
         applyRealtimeSettings(rtPriority);
 
+        int consecutiveOperationEnabled = 0;
+        for (int sample = 0; sample < settleSamples && !gStopRequested; ++sample) {
+            if (sdk.setMotorTarget(targets) != 0) {
+                std::cerr << "setMotorTarget failed while enabling motors\n";
+                disableMotors(sdk, targets);
+                return 1;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(periodUs));
+            int const actualStatus = sdk.getMotorActual(actuals);
+            if (operationFeedbackReady(sdk, actuals, actualStatus)) {
+                ++consecutiveOperationEnabled;
+            } else {
+                consecutiveOperationEnabled = 0;
+            }
+            if (consecutiveOperationEnabled >= 10) {
+                break;
+            }
+        }
+        if (gStopRequested) {
+            std::cerr << "stop requested while enabling motors\n";
+            disableMotors(sdk, targets);
+            return 130;
+        }
+        if (consecutiveOperationEnabled < 10) {
+            std::cerr << "motors did not reach operation enabled; consecutive enabled samples="
+                      << consecutiveOperationEnabled << "\n";
+            disableMotors(sdk, targets);
+            return 1;
+        }
+
         int const rampIterations = std::max(1, rampMs * 1000 / periodUs);
         int const holdIterations = std::max(1, holdMs * 1000 / periodUs);
         int const windowIterations = std::max(1, fitWindowMs * 1000 / periodUs);
@@ -355,7 +386,12 @@ int main(int argc, char** argv) {
                     disableMotors(sdk, targets);
                     return 1;
                 }
-                sdk.getMotorActual(actuals);
+                int const actualStatus = sdk.getMotorActual(actuals);
+                if (!operationFeedbackReady(sdk, actuals, actualStatus)) {
+                    std::cerr << "operation-enabled feedback lost during ramp at point " << point << "\n";
+                    disableMotors(sdk, targets);
+                    return 1;
+                }
                 nextWake += std::chrono::microseconds(periodUs);
                 std::this_thread::sleep_until(nextWake);
             }
@@ -374,6 +410,11 @@ int main(int argc, char** argv) {
                 }
                 int const actualStatus = sdk.getMotorActual(actuals);
                 auto const& actual = actuals[static_cast<std::size_t>(motorIndex)];
+                if (!operationFeedbackReady(sdk, actuals, actualStatus)) {
+                    std::cerr << "operation-enabled feedback lost during hold at point " << point << "\n";
+                    disableMotors(sdk, targets);
+                    return 1;
+                }
                 if (i >= holdIterations - windowIterations) {
                     ++row.samples;
                     row.posMean += actual.pos;

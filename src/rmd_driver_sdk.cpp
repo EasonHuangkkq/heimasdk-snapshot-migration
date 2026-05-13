@@ -15,6 +15,7 @@
 #include "rmd_can_sdk/rs232_imu_backend.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -49,6 +50,24 @@ DriverSDK::motorActualStruct copyPublicActual(RmdCanSdk::MotorActual const& actu
     out.voltage = actual.voltage;
     out.statusWord = actual.statusWord;
     out.errorCode = actual.errorCode;
+    return out;
+}
+
+DriverSDK::backendStatusStruct toPublicBackendStatus(RmdCanSdk::BackendStatus const& status) {
+    DriverSDK::backendStatusStruct out;
+    out.running = status.running;
+    out.degraded = status.degraded;
+    out.errorCode = status.errorCode;
+    out.cycleCount = status.cycleCount;
+    out.deadlineMissCount = status.deadlineMissCount;
+    out.lastCycleNs = status.lastCycleNs;
+    out.maxCycleNs = status.maxCycleNs;
+    out.lateWakeupCount = status.lateWakeupCount;
+    out.lastWakeupLatencyNs = status.lastWakeupLatencyNs;
+    out.maxWakeupLatencyNs = status.maxWakeupLatencyNs;
+    out.staleFrameCount = status.staleFrameCount;
+    out.rxTimeoutCount = status.rxTimeoutCount;
+    out.wcIncompleteCount = status.wcIncompleteCount;
     return out;
 }
 
@@ -240,6 +259,18 @@ public:
         return staleCount == 0 ? 0 : -staleCount;
     }
 
+    int getBackendStatuses(std::vector<backendStatusStruct>& data) const {
+        if (!initialized_) {
+            return std::numeric_limits<int>::min();
+        }
+        data.clear();
+        data.reserve(backendRuntimes_.size());
+        for (auto const& runtime : backendRuntimes_) {
+            data.push_back(toPublicBackendStatus(runtime.backend->status()));
+        }
+        return 0;
+    }
+
     int getEncoderCounts(std::vector<int>& data) {
         if (!initialized_ || static_cast<int>(data.size()) != config_.totalMotorCount) {
             return std::numeric_limits<int>::min();
@@ -359,9 +390,17 @@ DriverSDK::~DriverSDK() {
     delete impl_;
 }
 
-void DriverSDK::setCPU(unsigned short) {}
+void DriverSDK::setCPU(unsigned short cpu) {
+    std::string const value = std::to_string(cpu);
+    setenv("RMD_ECAT_RT_CPU", value.c_str(), 1);
+}
 
 int DriverSDK::setCPUs(std::vector<unsigned short> const& cpus, std::string const& bus) {
+    if ((bus == "ECAT" || bus == "EtherCAT" || bus == "ethercat") && !cpus.empty()) {
+        std::string const value = std::to_string(cpus.front());
+        setenv("RMD_ECAT_RT_CPU", value.c_str(), 1);
+        return 0;
+    }
     return bus == "CAN" && cpus.size() == 3 ? 0 : -1;
 }
 
@@ -432,6 +471,10 @@ int DriverSDK::setMotorTarget(std::vector<motorTargetStruct> const& data) {
 
 int DriverSDK::getMotorActual(std::vector<motorActualStruct>& data) {
     return impl_->getActuals(data);
+}
+
+int DriverSDK::getBackendStatus(std::vector<backendStatusStruct>& data) {
+    return impl_->getBackendStatuses(data);
 }
 
 int DriverSDK::getEncoderCount(std::vector<int>& data) {
