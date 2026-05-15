@@ -23,6 +23,8 @@ bool operationFeedbackReady(DriverSDK::DriverSDK& sdk,
                             std::vector<DriverSDK::motorActualStruct> const& actuals,
                             int status);
 int parseNonNegativeInt(char const* text, int fallback);
+float smoothRampProgress(float linearProgress);
+float smoothRampProgressForElapsed(double elapsedMs, double rampMs);
 bool recordConsecutiveReady(bool ready, int& consecutiveReady, int requiredReadySamples);
 bool feedbackReady(DriverSDK::DriverSDK& sdk,
                    std::vector<DriverSDK::motorActualStruct> const& actuals,

@@ -26,6 +26,7 @@ using RmdCanSdk::findParamsForAlias;
 using RmdCanSdk::isActiveMotor;
 using RmdCanSdk::operationFeedbackReady;
 using RmdCanSdk::recordConsecutiveReady;
+using RmdCanSdk::smoothRampProgressForElapsed;
 
 struct LoopTimingStats {
     int samples = 0;
@@ -466,7 +467,7 @@ int main(int argc, char** argv) {
             previousLoopStart = loopStart;
 
             auto const targetPrepStart = std::chrono::steady_clock::now();
-            float const progress = rampMs <= 0 ? 1.0f : std::min(1.0f, static_cast<float>(i * periodMs) / rampMs);
+            float const progress = smoothRampProgressForElapsed(static_cast<double>(i) * periodMs, rampMs);
             for (int active : sdk.getActiveMotors()) {
                 std::size_t const index = static_cast<std::size_t>(active);
                 targets[index].pos =

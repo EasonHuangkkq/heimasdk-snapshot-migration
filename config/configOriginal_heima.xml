@@ -169,7 +169,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.5</MaximumPosition>
+            <MaximumPosition>0.53</MaximumPosition>
         </Motor>
         <!-- x6 motor -->
         <Motor limb="0" motor="5" alias="6">
@@ -183,7 +183,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.5</MaximumPosition>
+            <MaximumPosition>0.53</MaximumPosition>
         </Motor>
         <!--left leg -->
         <!-- x12 motor -->
@@ -254,7 +254,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.5</MaximumPosition>
+            <MaximumPosition>0.53</MaximumPosition>
         </Motor>
         <!-- x6 motor -->
         <Motor limb="1" motor="5" alias="12">
@@ -268,7 +268,7 @@
             <RatedTorque>20</RatedTorque>
             <MaximumTorque>60</MaximumTorque>
             <MinimumPosition>-0.3</MinimumPosition>
-            <MaximumPosition>0.5</MaximumPosition>
+            <MaximumPosition>0.53</MaximumPosition>
         </Motor>
         <!-- waist-->
         <Motor limb="4" motor="0" alias="13">

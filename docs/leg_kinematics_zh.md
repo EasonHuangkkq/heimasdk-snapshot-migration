@@ -55,7 +55,8 @@ J_ankle_r_roll = 0.00545
 ## 4. 右腿路径 demo
 
 `rmd_ecat_joint_path_demo` 是一个最小 EtherCAT 路径控制 demo。它不做复杂规划，只在
-关节空间里定义三段 waypoint，再按应用层周期线性插值：
+关节空间里定义三段 waypoint，再按应用层周期用 minimum-jerk 进度平滑插值。这样
+waypoint 起点和终点的目标速度都是 0，比线性插值更适合真实机器人拍视频：
 
 ```text
 0 ms:      hip=0.35, knee=-0.70, ankle_pitch=0.35, ankle_roll=0
@@ -69,9 +70,47 @@ duration: hip=0.35, knee=-0.70, ankle_pitch=0.35, ankle_roll=0
 sample joint path -> solve motor3/4/5/6 -> check XML limits -> setMotorTarget()
 ```
 
-程序启动后先从当前位置 ramp 到第一个 waypoint，然后才开始按路径运动。其他 active
-motors 保持启动时当前位置。无硬件检查命令：
+程序启动后先从当前位置用同样的平滑 ramp 接到第一个 waypoint，然后才开始按路径运动。
+其他 active motors 保持启动时当前位置。无硬件检查命令：
 
 ```bash
 ./build-open-source-check/rmd_ecat_joint_path_demo --audit-self-test
+```
+
+双腿下蹲视频路径使用 `squat_repeat` 或 `squat_slow_repeat`。当前安全版本的下蹲
+目标是 `hip=0.50, knee=-1.00, ankle_pitch=0.38, ankle_roll=0`，不是
+`ankle_pitch=0.50`；后者会把脚踝拉杆电机解到当前 XML 限位之外。无硬件解析检查：
+
+```bash
+./build-open-source-check/rmd_ecat_joint_path_demo --audit-squat-repeat
+```
+
+单独拍膝盖 pitch 的多节点路径使用 `knee_pitch_range_fast_repeat` 或
+`knee_pitch_range_faster_repeat`。两者节点相同：
+
+```text
+knee_pitch: 0 -> -0.30 -> -0.60 -> -0.90 -> -1.20 -> -0.90 -> -0.60 -> -0.30 -> 0
+```
+
+`fast` 是 `500 ms/节点`，从 0 到 -1.20 rad 用 2.0 s；`faster` 是
+`300 ms/节点`，从 0 到 -1.20 rad 用 1.2 s。当前机构解算下
+`knee_pitch=-1.35/-1.50` 不可达，不能靠提高速度硬跑。无硬件解析检查：
+
+```bash
+./build-open-source-check/rmd_ecat_joint_path_demo --audit-knee-pitch-range-faster-repeat
+```
+
+脚踝大范围快摆视频路径：
+
+```text
+ankle_pitch_swing_fast_repeat: ankle_pitch 0 -> 0.35 -> 0, 每段 800 ms
+ankle_roll_swing_fast_repeat:  ankle_roll  0 -> +0.35 -> -0.35 -> 0, 每段 800 ms
+```
+
+roll 快摆时固定 `ankle_pitch=0.175`，这样 `motor5/6/11/12` 都留在当前
+`[-0.3, 0.53] rad` XML 限位内。无硬件解析检查：
+
+```bash
+./build-open-source-check/rmd_ecat_joint_path_demo --audit-ankle-pitch-fast-repeat
+./build-open-source-check/rmd_ecat_joint_path_demo --audit-ankle-roll-fast-repeat
 ```

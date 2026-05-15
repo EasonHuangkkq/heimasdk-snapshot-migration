@@ -27,6 +27,7 @@ using RmdCanSdk::findParamsForAlias;
 using RmdCanSdk::isActiveMotor;
 using RmdCanSdk::operationFeedbackReady;
 using RmdCanSdk::recordConsecutiveReady;
+using RmdCanSdk::smoothRampProgressForElapsed;
 
 struct LoopTimingStats {
     int samples = 0;
@@ -89,14 +90,24 @@ void printUsage(char const* program) {
     std::cerr << "usage: " << program
               << " <config.xml> <duration_ms> <max_current> <settle_samples> <period_ms> <ramp_ms>"
               << " right|both [demo|ankle_pitch_swing|ankle_pitch_swing_repeat|"
-                 "knee_ankle_swing_repeat|knee_ankle_swing_slow_repeat]\n";
+                 "ankle_pitch_swing_fast_repeat|ankle_roll_swing_fast_repeat|"
+                 "knee_ankle_swing_repeat|knee_ankle_swing_slow_repeat|"
+                 "knee_pitch_swing_repeat|knee_pitch_swing_deep_repeat|"
+                 "knee_pitch_range_fast_repeat|knee_pitch_range_faster_repeat|"
+                 "squat|squat_repeat|squat_slow_repeat]\n";
     std::cerr << "example: " << program
               << " config/configOriginal_heima.xml 10000 500 450 5 8000 right\n";
     std::cerr << "audit: " << program << " --audit-self-test\n";
     std::cerr << "audit ankle swing: " << program << " --audit-ankle-pitch-swing\n";
     std::cerr << "audit ankle repeat: " << program << " --audit-ankle-pitch-repeat\n";
+    std::cerr << "audit ankle pitch fast repeat: " << program << " --audit-ankle-pitch-fast-repeat\n";
+    std::cerr << "audit ankle roll fast repeat: " << program << " --audit-ankle-roll-fast-repeat\n";
     std::cerr << "audit knee ankle both repeat: " << program << " --audit-knee-ankle-both-repeat\n";
     std::cerr << "audit knee ankle both slow repeat: " << program << " --audit-knee-ankle-both-slow-repeat\n";
+    std::cerr << "audit knee pitch repeat: " << program << " --audit-knee-pitch-repeat\n";
+    std::cerr << "audit knee pitch range fast repeat: " << program << " --audit-knee-pitch-range-fast-repeat\n";
+    std::cerr << "audit knee pitch range faster repeat: " << program << " --audit-knee-pitch-range-faster-repeat\n";
+    std::cerr << "audit squat repeat: " << program << " --audit-squat-repeat\n";
     std::cerr << "env: RMD_ECAT_RT_CPU/RMD_ECAT_RT_PRIORITY configure the EtherCAT backend; "
                  "RMD_ECAT_APP_CPU/RMD_ECAT_APP_RT_PRIORITY configure this app loop\n";
 }
@@ -119,12 +130,52 @@ std::vector<RmdCanSdk::LegJointWaypoint> makeAnklePitchSwingPath(int durationMs)
     };
 }
 
+std::vector<RmdCanSdk::LegJointWaypoint> makeAnkleRollSwingPath(int stepMs) {
+    return std::vector<RmdCanSdk::LegJointWaypoint>{
+        RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.175, 0.0}},
+        RmdCanSdk::LegJointWaypoint{stepMs, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.175, 0.35}},
+        RmdCanSdk::LegJointWaypoint{2 * stepMs, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.175, -0.35}},
+        RmdCanSdk::LegJointWaypoint{3 * stepMs, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.175, 0.0}},
+    };
+}
+
 std::vector<RmdCanSdk::LegJointWaypoint> makeKneeAnkleSwingPath(int durationMs) {
     int const midMs = durationMs / 2;
     return std::vector<RmdCanSdk::LegJointWaypoint>{
         RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{0.35, -1.0, 0.0, 0.0}},
         RmdCanSdk::LegJointWaypoint{midMs, RmdCanSdk::LegJointTargets{0.35, 0.0, 0.35, 0.0}},
         RmdCanSdk::LegJointWaypoint{durationMs, RmdCanSdk::LegJointTargets{0.35, -1.0, 0.0, 0.0}},
+    };
+}
+
+std::vector<RmdCanSdk::LegJointWaypoint> makeKneePitchSwingPath(int durationMs, double deepKneePitchRad) {
+    int const midMs = durationMs / 2;
+    return std::vector<RmdCanSdk::LegJointWaypoint>{
+        RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.35, 0.0}},
+        RmdCanSdk::LegJointWaypoint{midMs, RmdCanSdk::LegJointTargets{0.35, deepKneePitchRad, 0.35, 0.0}},
+        RmdCanSdk::LegJointWaypoint{durationMs, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.35, 0.0}},
+    };
+}
+
+std::vector<RmdCanSdk::LegJointWaypoint> makeKneePitchRangePath(int stepMs) {
+    std::vector<double> const kneeNodes{0.0, -0.30, -0.60, -0.90, -1.20, -0.90, -0.60, -0.30, 0.0};
+    std::vector<RmdCanSdk::LegJointWaypoint> path;
+    path.reserve(kneeNodes.size());
+    for (std::size_t i = 0; i < kneeNodes.size(); ++i) {
+        path.push_back(RmdCanSdk::LegJointWaypoint{
+            static_cast<int>(i) * stepMs,
+            RmdCanSdk::LegJointTargets{0.35, kneeNodes[i], 0.35, 0.0},
+        });
+    }
+    return path;
+}
+
+std::vector<RmdCanSdk::LegJointWaypoint> makeSquatPath(int durationMs) {
+    int const midMs = durationMs / 2;
+    return std::vector<RmdCanSdk::LegJointWaypoint>{
+        RmdCanSdk::LegJointWaypoint{0, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.35, 0.0}},
+        RmdCanSdk::LegJointWaypoint{midMs, RmdCanSdk::LegJointTargets{0.50, -1.00, 0.38, 0.0}},
+        RmdCanSdk::LegJointWaypoint{durationMs, RmdCanSdk::LegJointTargets{0.35, -0.70, 0.35, 0.0}},
     };
 }
 
@@ -138,18 +189,48 @@ std::vector<RmdCanSdk::LegJointWaypoint> makePathForMode(std::string const& mode
     if (mode == "ankle_pitch_swing_repeat") {
         return makeAnklePitchSwingPath(4000);
     }
+    if (mode == "ankle_pitch_swing_fast_repeat") {
+        return makeAnklePitchSwingPath(1600);
+    }
+    if (mode == "ankle_roll_swing_fast_repeat") {
+        return makeAnkleRollSwingPath(800);
+    }
     if (mode == "knee_ankle_swing_repeat") {
         return makeKneeAnkleSwingPath(8000);
     }
     if (mode == "knee_ankle_swing_slow_repeat") {
         return makeKneeAnkleSwingPath(16000);
     }
+    if (mode == "knee_pitch_swing_repeat") {
+        return makeKneePitchSwingPath(8000, -0.90);
+    }
+    if (mode == "knee_pitch_swing_deep_repeat") {
+        return makeKneePitchSwingPath(10000, -1.00);
+    }
+    if (mode == "knee_pitch_range_fast_repeat") {
+        return makeKneePitchRangePath(500);
+    }
+    if (mode == "knee_pitch_range_faster_repeat") {
+        return makeKneePitchRangePath(300);
+    }
+    if (mode == "squat") {
+        return makeSquatPath(durationMs);
+    }
+    if (mode == "squat_repeat") {
+        return makeSquatPath(12000);
+    }
+    if (mode == "squat_slow_repeat") {
+        return makeSquatPath(20000);
+    }
     throw std::invalid_argument("unknown joint path mode: " + mode);
 }
 
 bool repeatsPath(std::string const& mode) {
-    return mode == "ankle_pitch_swing_repeat" || mode == "knee_ankle_swing_repeat" ||
-           mode == "knee_ankle_swing_slow_repeat";
+    return mode == "ankle_pitch_swing_repeat" || mode == "ankle_pitch_swing_fast_repeat" ||
+           mode == "ankle_roll_swing_fast_repeat" || mode == "knee_ankle_swing_repeat" ||
+           mode == "knee_ankle_swing_slow_repeat" || mode == "knee_pitch_swing_repeat" ||
+           mode == "knee_pitch_swing_deep_repeat" || mode == "knee_pitch_range_fast_repeat" ||
+           mode == "knee_pitch_range_faster_repeat" || mode == "squat_repeat" || mode == "squat_slow_repeat";
 }
 
 int pathDurationMs(std::vector<RmdCanSdk::LegJointWaypoint> const& path) {
@@ -372,6 +453,42 @@ int runAnklePitchRepeatAudit() {
     return 0;
 }
 
+int runAnklePitchFastRepeatAudit() {
+    std::string const mode = "ankle_pitch_swing_fast_repeat";
+    auto const path = makePathForMode(mode, 120000);
+    std::string error;
+    if (!RmdCanSdk::validateLegJointPath(path, &error)) {
+        std::cerr << "ankle pitch fast repeat audit failed: " << error << "\n";
+        return 1;
+    }
+    for (int totalTime : {0, 400, 800, 1200, 1600, 119995}) {
+        int const sampleTime = sampleTimeForMode(mode, path, totalTime);
+        RmdCanSdk::LegJointTargets const joints = RmdCanSdk::sampleLegJointPath(path, sampleTime);
+        RmdCanSdk::LegMotorTargets const motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+        printResolvedBothLegMotors("ankle_pitch_fast", sampleTime, joints, motors);
+    }
+    std::cout << "ankle pitch fast repeat audit passed\n";
+    return 0;
+}
+
+int runAnkleRollFastRepeatAudit() {
+    std::string const mode = "ankle_roll_swing_fast_repeat";
+    auto const path = makePathForMode(mode, 120000);
+    std::string error;
+    if (!RmdCanSdk::validateLegJointPath(path, &error)) {
+        std::cerr << "ankle roll fast repeat audit failed: " << error << "\n";
+        return 1;
+    }
+    for (int totalTime : {0, 400, 800, 1200, 1600, 2000, 2400, 119995}) {
+        int const sampleTime = sampleTimeForMode(mode, path, totalTime);
+        RmdCanSdk::LegJointTargets const joints = RmdCanSdk::sampleLegJointPath(path, sampleTime);
+        RmdCanSdk::LegMotorTargets const motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+        printResolvedBothLegMotors("ankle_roll_fast", sampleTime, joints, motors);
+    }
+    std::cout << "ankle roll fast repeat audit passed\n";
+    return 0;
+}
+
 int runKneeAnkleBothRepeatAudit() {
     std::string const mode = "knee_ankle_swing_repeat";
     auto const path = makePathForMode(mode, 120000);
@@ -408,6 +525,78 @@ int runKneeAnkleBothSlowRepeatAudit() {
     return 0;
 }
 
+int runKneePitchRepeatAudit() {
+    std::string const mode = "knee_pitch_swing_repeat";
+    auto const path = makePathForMode(mode, 120000);
+    std::string error;
+    if (!RmdCanSdk::validateLegJointPath(path, &error)) {
+        std::cerr << "knee pitch repeat audit failed: " << error << "\n";
+        return 1;
+    }
+    for (int totalTime : {0, 2000, 4000, 6000, 8000, 119995}) {
+        int const sampleTime = sampleTimeForMode(mode, path, totalTime);
+        RmdCanSdk::LegJointTargets const joints = RmdCanSdk::sampleLegJointPath(path, sampleTime);
+        RmdCanSdk::LegMotorTargets const motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+        printResolvedBothLegMotors("knee_pitch_repeat", sampleTime, joints, motors);
+    }
+    std::cout << "knee pitch repeat audit passed\n";
+    return 0;
+}
+
+int runKneePitchRangeFastRepeatAudit() {
+    std::string const mode = "knee_pitch_range_fast_repeat";
+    auto const path = makePathForMode(mode, 120000);
+    std::string error;
+    if (!RmdCanSdk::validateLegJointPath(path, &error)) {
+        std::cerr << "knee pitch range fast repeat audit failed: " << error << "\n";
+        return 1;
+    }
+    for (int totalTime : {0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 119995}) {
+        int const sampleTime = sampleTimeForMode(mode, path, totalTime);
+        RmdCanSdk::LegJointTargets const joints = RmdCanSdk::sampleLegJointPath(path, sampleTime);
+        RmdCanSdk::LegMotorTargets const motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+        printResolvedBothLegMotors("knee_pitch_range_fast", sampleTime, joints, motors);
+    }
+    std::cout << "knee pitch range fast repeat audit passed\n";
+    return 0;
+}
+
+int runKneePitchRangeFasterRepeatAudit() {
+    std::string const mode = "knee_pitch_range_faster_repeat";
+    auto const path = makePathForMode(mode, 120000);
+    std::string error;
+    if (!RmdCanSdk::validateLegJointPath(path, &error)) {
+        std::cerr << "knee pitch range faster repeat audit failed: " << error << "\n";
+        return 1;
+    }
+    for (int totalTime : {0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400, 119995}) {
+        int const sampleTime = sampleTimeForMode(mode, path, totalTime);
+        RmdCanSdk::LegJointTargets const joints = RmdCanSdk::sampleLegJointPath(path, sampleTime);
+        RmdCanSdk::LegMotorTargets const motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+        printResolvedBothLegMotors("knee_pitch_range_faster", sampleTime, joints, motors);
+    }
+    std::cout << "knee pitch range faster repeat audit passed\n";
+    return 0;
+}
+
+int runSquatRepeatAudit() {
+    std::string const mode = "squat_repeat";
+    auto const path = makePathForMode(mode, 120000);
+    std::string error;
+    if (!RmdCanSdk::validateLegJointPath(path, &error)) {
+        std::cerr << "squat repeat audit failed: " << error << "\n";
+        return 1;
+    }
+    for (int totalTime : {0, 3000, 6000, 9000, 12000, 119995}) {
+        int const sampleTime = sampleTimeForMode(mode, path, totalTime);
+        RmdCanSdk::LegJointTargets const joints = RmdCanSdk::sampleLegJointPath(path, sampleTime);
+        RmdCanSdk::LegMotorTargets const motors = RmdCanSdk::solveRightLegMotorsFromJoints(joints);
+        printResolvedBothLegMotors("squat_repeat", sampleTime, joints, motors);
+    }
+    std::cout << "squat repeat audit passed\n";
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -423,11 +612,29 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--audit-ankle-pitch-repeat") {
         return runAnklePitchRepeatAudit();
     }
+    if (argc == 2 && std::string(argv[1]) == "--audit-ankle-pitch-fast-repeat") {
+        return runAnklePitchFastRepeatAudit();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--audit-ankle-roll-fast-repeat") {
+        return runAnkleRollFastRepeatAudit();
+    }
     if (argc == 2 && std::string(argv[1]) == "--audit-knee-ankle-both-repeat") {
         return runKneeAnkleBothRepeatAudit();
     }
     if (argc == 2 && std::string(argv[1]) == "--audit-knee-ankle-both-slow-repeat") {
         return runKneeAnkleBothSlowRepeatAudit();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--audit-knee-pitch-repeat") {
+        return runKneePitchRepeatAudit();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--audit-knee-pitch-range-fast-repeat") {
+        return runKneePitchRangeFastRepeatAudit();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--audit-knee-pitch-range-faster-repeat") {
+        return runKneePitchRangeFasterRepeatAudit();
+    }
+    if (argc == 2 && std::string(argv[1]) == "--audit-squat-repeat") {
+        return runSquatRepeatAudit();
     }
 
     if (argc != 8 && argc != 9) {
@@ -454,7 +661,11 @@ int main(int argc, char** argv) {
     }
     std::string const mode = argc == 9 ? argv[8] : "demo";
     if (mode != "demo" && mode != "ankle_pitch_swing" && mode != "ankle_pitch_swing_repeat" &&
-        mode != "knee_ankle_swing_repeat" && mode != "knee_ankle_swing_slow_repeat") {
+        mode != "ankle_pitch_swing_fast_repeat" && mode != "ankle_roll_swing_fast_repeat" &&
+        mode != "knee_ankle_swing_repeat" && mode != "knee_ankle_swing_slow_repeat" &&
+        mode != "knee_pitch_swing_repeat" && mode != "knee_pitch_swing_deep_repeat" &&
+        mode != "knee_pitch_range_fast_repeat" && mode != "knee_pitch_range_faster_repeat" &&
+        mode != "squat" && mode != "squat_repeat" && mode != "squat_slow_repeat") {
         std::cerr << "unknown joint path mode: " << mode << "\n";
         return 2;
     }
@@ -625,8 +836,7 @@ int main(int argc, char** argv) {
                 disableMotors(sdk, targets);
                 return 2;
             }
-            float const rampProgress =
-                rampMs <= 0 ? 1.0f : std::min(1.0f, static_cast<float>(loopMs) / static_cast<float>(rampMs));
+            float const rampProgress = smoothRampProgressForElapsed(loopMs, rampMs);
             for (int active : sdk.getActiveMotors()) {
                 std::size_t const index = static_cast<std::size_t>(active);
                 float const finalPosition = hasPathTarget[index] ? currentResolvedTargets[index] : startPositions[index];

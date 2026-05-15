@@ -27,6 +27,7 @@ using RmdCanSdk::findParamsForAlias;
 using RmdCanSdk::isActiveMotor;
 using RmdCanSdk::operationEnabled;
 using RmdCanSdk::operationFeedbackReady;
+using RmdCanSdk::smoothRampProgress;
 
 struct PointResult {
     int point = 0;
@@ -378,7 +379,7 @@ int main(int argc, char** argv) {
 
             auto nextWake = std::chrono::steady_clock::now();
             for (int i = 0; i < rampIterations && !gStopRequested; ++i) {
-                float const progress = static_cast<float>(i + 1) / static_cast<float>(rampIterations);
+                float const progress = smoothRampProgress(static_cast<float>(i + 1) / static_cast<float>(rampIterations));
                 targets[static_cast<std::size_t>(motorIndex)].pos =
                     rampStart + (targetPosition - rampStart) * progress;
                 if (sdk.setMotorTarget(targets) != 0) {

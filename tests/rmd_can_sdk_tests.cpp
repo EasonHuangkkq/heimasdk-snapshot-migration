@@ -935,6 +935,10 @@ void testLegJointPathInterpolatesAndValidatesWaypoints() {
     requireNear(middle.anklePitchRad, 0.34, 1.0e-9, "joint path interpolates ankle pitch");
     requireNear(middle.ankleRollRad, 0.01, 1.0e-9, "joint path interpolates ankle roll");
 
+    auto quarter = RmdCanSdk::sampleLegJointPath(path, 250);
+    requireNear(quarter.hipPitchRad, 0.3520703125, 1.0e-9, "joint path eases in hip pitch");
+    requireNear(quarter.kneePitchRad, -0.6979296875, 1.0e-9, "joint path eases in knee pitch");
+
     auto after = RmdCanSdk::sampleLegJointPath(path, 2500);
     requireNear(after.kneePitchRad, -0.70, 1.0e-9, "joint path clamps after last waypoint");
 
@@ -946,6 +950,20 @@ void testLegJointPathInterpolatesAndValidatesWaypoints() {
             "joint path rejects non-increasing waypoint times");
     require(error.find("strictly increasing") != std::string::npos,
             "joint path validation reports non-increasing time reason");
+}
+
+void testSmoothRampProgressUsesMinimumJerkProfile() {
+    requireNear(RmdCanSdk::smoothRampProgress(-0.25f), 0.0, 1.0e-9, "smooth ramp clamps before start");
+    requireNear(RmdCanSdk::smoothRampProgress(0.0f), 0.0, 1.0e-9, "smooth ramp starts at zero");
+    requireNear(RmdCanSdk::smoothRampProgress(0.5f), 0.5, 1.0e-9, "smooth ramp midpoint stays centered");
+    requireNear(RmdCanSdk::smoothRampProgress(1.0f), 1.0, 1.0e-9, "smooth ramp ends at one");
+    requireNear(RmdCanSdk::smoothRampProgress(1.25f), 1.0, 1.0e-9, "smooth ramp clamps after end");
+    require(RmdCanSdk::smoothRampProgress(0.1f) < 0.1f, "smooth ramp eases in below linear progress");
+    require(RmdCanSdk::smoothRampProgress(0.9f) > 0.9f, "smooth ramp eases out above linear progress");
+    requireNear(RmdCanSdk::smoothRampProgressForElapsed(250.0, 500.0), 0.5, 1.0e-9,
+                "elapsed smooth ramp normalizes by ramp duration");
+    requireNear(RmdCanSdk::smoothRampProgressForElapsed(10.0, 0.0), 1.0, 1.0e-9,
+                "zero-duration smooth ramp jumps to final target");
 }
 
 void testAtomicBackendStatusPublishesDeterministicMetrics() {
@@ -1542,6 +1560,7 @@ int main() {
     testLegKinematicsKneeGridRoundTripsAndStaysContinuous();
     testLegKinematicsAnklePitchGridRoundTripsAndStaysContinuous();
     testLegJointPathInterpolatesAndValidatesWaypoints();
+    testSmoothRampProgressUsesMinimumJerkProfile();
     testPublicApiCompiles();
     testUnsupportedCompatibilityApisReturnExplicitUnsupported();
     std::cout << "rmd_can_sdk_tests passed\n";

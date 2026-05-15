@@ -1,5 +1,6 @@
 #include "rmd_can_sdk/rmd_bench_workflow.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -69,6 +70,18 @@ int parseNonNegativeInt(char const* text, int fallback) {
         return -1;
     }
     return static_cast<int>(value);
+}
+
+float smoothRampProgress(float linearProgress) {
+    double const t = std::clamp(static_cast<double>(linearProgress), 0.0, 1.0);
+    return static_cast<float>(t * t * t * (10.0 + t * (-15.0 + 6.0 * t)));
+}
+
+float smoothRampProgressForElapsed(double elapsedMs, double rampMs) {
+    if (rampMs <= 0.0) {
+        return 1.0f;
+    }
+    return smoothRampProgress(static_cast<float>(elapsedMs / rampMs));
 }
 
 bool recordConsecutiveReady(bool ready, int& consecutiveReady, int requiredReadySamples) {

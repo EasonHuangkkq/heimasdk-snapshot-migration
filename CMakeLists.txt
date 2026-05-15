@@ -299,6 +299,22 @@ set_tests_properties(rmd_ecat_joint_path_demo_audit_ankle_pitch_repeat PROPERTIE
 )
 
 add_test(
+    NAME rmd_ecat_joint_path_demo_audit_ankle_pitch_fast_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-ankle-pitch-fast-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_ankle_pitch_fast_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "ankle pitch fast repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_ankle_roll_fast_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-ankle-roll-fast-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_ankle_roll_fast_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "ankle roll fast repeat audit passed"
+)
+
+add_test(
     NAME rmd_ecat_joint_path_demo_audit_knee_ankle_both_repeat
     COMMAND rmd_ecat_joint_path_demo --audit-knee-ankle-both-repeat
 )
@@ -312,6 +328,38 @@ add_test(
 )
 set_tests_properties(rmd_ecat_joint_path_demo_audit_knee_ankle_both_slow_repeat PROPERTIES
     PASS_REGULAR_EXPRESSION "knee ankle both slow repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_knee_pitch_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-knee-pitch-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_knee_pitch_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "knee pitch repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_knee_pitch_range_fast_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-knee-pitch-range-fast-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_knee_pitch_range_fast_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "knee pitch range fast repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_knee_pitch_range_faster_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-knee-pitch-range-faster-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_knee_pitch_range_faster_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "knee pitch range faster repeat audit passed"
+)
+
+add_test(
+    NAME rmd_ecat_joint_path_demo_audit_squat_repeat
+    COMMAND rmd_ecat_joint_path_demo --audit-squat-repeat
+)
+set_tests_properties(rmd_ecat_joint_path_demo_audit_squat_repeat PROPERTIES
+    PASS_REGULAR_EXPRESSION "squat repeat audit passed"
 )
 
 add_test(

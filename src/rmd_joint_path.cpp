@@ -15,6 +15,10 @@ double lerp(double start, double end, double t) {
     return start + (end - start) * t;
 }
 
+double minimumJerkProgress(double t) {
+    return t * t * t * (10.0 + t * (-15.0 + 6.0 * t));
+}
+
 LegJointTargets interpolate(LegJointTargets const& start, LegJointTargets const& end, double t) {
     LegJointTargets out;
     out.hipPitchRad = lerp(start.hipPitchRad, end.hipPitchRad, t);
@@ -66,7 +70,7 @@ LegJointTargets sampleLegJointPath(std::vector<LegJointWaypoint> const& path, in
             int const endTime = path[i].timeMs;
             double const t = static_cast<double>(elapsedMs - startTime) /
                              static_cast<double>(endTime - startTime);
-            return interpolate(path[i - 1].joints, path[i].joints, t);
+            return interpolate(path[i - 1].joints, path[i].joints, minimumJerkProgress(t));
         }
     }
 

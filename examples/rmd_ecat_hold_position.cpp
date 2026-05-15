@@ -19,6 +19,7 @@ using RmdCanSdk::disableMotors;
 using RmdCanSdk::feedbackReady;
 using RmdCanSdk::operationFeedbackReady;
 using RmdCanSdk::recordConsecutiveReady;
+using RmdCanSdk::smoothRampProgressForElapsed;
 
 void requestStop(int) {
     gStopRequested = 1;
@@ -179,7 +180,7 @@ int main(int argc, char** argv) {
 
         int const iterations = std::max(1, holdMs / periodMs);
         for (int i = 0; i < iterations && !gStopRequested; ++i) {
-            float const progress = rampMs <= 0 ? 1.0f : std::min(1.0f, static_cast<float>(i * periodMs) / rampMs);
+            float const progress = smoothRampProgressForElapsed(static_cast<double>(i) * periodMs, rampMs);
             for (int active : sdk.getActiveMotors()) {
                 std::size_t const index = static_cast<std::size_t>(active);
                 targets[index].pos =

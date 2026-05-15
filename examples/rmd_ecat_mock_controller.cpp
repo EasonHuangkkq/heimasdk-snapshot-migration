@@ -30,6 +30,7 @@ using RmdCanSdk::findParamsForAlias;
 using RmdCanSdk::isActiveMotor;
 using RmdCanSdk::operationFeedbackReady;
 using RmdCanSdk::recordConsecutiveReady;
+using RmdCanSdk::smoothRampProgressForElapsed;
 
 struct LoopTimingStats {
     int samples = 0;
@@ -818,8 +819,7 @@ int main(int argc, char** argv) {
             }
 
             double const elapsedLoopMs = static_cast<double>(i) * 1000.0 / static_cast<double>(policyHz);
-            float const progress =
-                rampMs <= 0 ? 1.0f : std::min(1.0f, static_cast<float>(elapsedLoopMs / rampMs));
+            float const progress = smoothRampProgressForElapsed(elapsedLoopMs, rampMs);
             if (mockRlJointPolicy) {
                 double const policyTimeSeconds = std::max(0.0, (elapsedLoopMs - rampMs) / 1000.0);
                 lastMockRlAction = sampleMockRlAction(policyTimeSeconds);
